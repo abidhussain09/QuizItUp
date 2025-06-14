@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { comparePassword, generateToken } from '@/lib/auth'
+import { comparePassword, generateToken } from '@/lib/auth.server'
 
 export async function POST(req: Request) {
     try {

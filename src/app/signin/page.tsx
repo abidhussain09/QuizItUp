@@ -35,7 +35,7 @@ export default function SignInPage() {
 
             console.log(res);
             // Redirect to home or dashboard
-            router.push('/');
+            router.push('/dashboard');
         } catch (err: any) {
             console.error(err);
             setError(err.response?.data?.error || 'Sign in failed');

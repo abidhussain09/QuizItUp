@@ -2,6 +2,7 @@
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import React, { useRef, useState, useEffect } from "react";
+import PastQuizInfo from "./pastQuizInfo";
 
 export const BackgroundBeamsWithCollision = ({
     children,
@@ -83,13 +84,13 @@ export const BackgroundBeamsWithCollision = ({
                     parentRef={parentRef}
                 />
             ))}
-            <div className="flex">
-                <div>
-                <h2 className="text-3xl font-bold ">Welcome to QuizItUp</h2>
-                <p className="text-xl">Here you can create a quiz or join a quiz to participate</p>
+            <div className="flex w-full p-12 justify-center h-full items-center">
+                <div className="flex flex-col basis-2/5 p-10 gap-4">
+                <h2 className="text-4xl font-bold w-full">Welcome to QuizItUp</h2>
+                <p className="text-2xl">Here you can create a quiz or join a quiz to participate</p>
                 </div>
-                <div>
-                    
+                <div className="basis-3/5 w-full">
+                    <PastQuizInfo/>
                 </div>
             </div>
             {children}
