@@ -13,6 +13,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  ADMIN
+  PARTICIPANT
+}
+
 model User {
   id        String   @id @default(uuid())
   username  String   @unique
@@ -20,9 +25,58 @@ model User {
   password  String
   role      Role     @default(PARTICIPANT)
   createdAt DateTime @default(now())
+
+  quizzes        Quiz[]          @relation("CreatedQuizzes")
+  participations Participation[]
 }
 
-enum Role {
-  ADMIN
-  PARTICIPANT
+model Quiz {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  creatorId   String
+  createdAt   DateTime @default(now())
+
+  creator   User       @relation("CreatedQuizzes", fields: [creatorId], references: [id])
+  quizRooms QuizRoom[]
+  questions Question[]
+}
+
+model QuizRoom {
+  id         String    @id @default(uuid())
+  quizId     String
+  inviteCode String    @unique
+  createdAt  DateTime  @default(now())
+  startTime  DateTime?
+  endTime    DateTime?
+
+  quiz           Quiz            @relation(fields: [quizId], references: [id])
+  participations Participation[]
+}
+
+model Participation {
+  id         String   @id @default(uuid())
+  userId     String
+  quizRoomId String
+  joinedAt   DateTime @default(now())
+  score      Int      @default(0)
+  completed  Boolean  @default(false)
+
+  user     User     @relation(fields: [userId], references: [id])
+  quizRoom QuizRoom @relation(fields: [quizRoomId], references: [id])
+}
+
+model Question {
+  id            String   @id @default(uuid())
+  quizId        String
+  text          String
+  optionA       String
+  optionB       String
+  optionC       String
+  optionD       String
+  correctOption String
+  marks         Int
+  createdAt     DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id])
 }
