@@ -62,9 +62,11 @@ model Participation {
   joinedAt   DateTime @default(now())
   score      Int      @default(0)
   completed  Boolean  @default(false)
+  finishedAt DateTime?
 
-  user     User     @relation(fields: [userId], references: [id])
-  quizRoom QuizRoom @relation(fields: [quizRoomId], references: [id])
+  user           User              @relation(fields: [userId], references: [id])
+  quizRoom       QuizRoom          @relation(fields: [quizRoomId], references: [id])
+  participantAnswers ParticipantAnswer[]
 }
 
 model Question {
@@ -79,5 +81,22 @@ model Question {
   marks         Int
   createdAt     DateTime @default(now())
 
-  quiz Quiz @relation(fields: [quizId], references: [id])
+  quiz             Quiz               @relation(fields: [quizId], references: [id])
+  participantAnswers ParticipantAnswer[]
 }
+
+model ParticipantAnswer {
+  id              String   @id @default(uuid())
+  participationId String
+  questionId      String
+  selectedOption  String
+  isCorrect       Boolean
+  marks           Int
+  answeredAt      DateTime @default(now())
+
+  participation Participation @relation(fields: [participationId], references: [id])
+  question      Question      @relation(fields: [questionId], references: [id])
+
+  @@unique([participationId, questionId])
+}
+

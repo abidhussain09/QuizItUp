@@ -18,7 +18,10 @@ import {
     XCircle,
     Play,
     History,
-    Target
+    Target,
+    RefreshCw,
+    AlertCircle,
+    ExternalLink
 } from "lucide-react";
 
 // ✅ Define types
@@ -28,60 +31,53 @@ type User = {
     username?: string;
 };
 
-type PastQuiz = {
+
+
+// Types for real quiz history data
+type UserQuizHistory = {
     id: string;
-    title: string;
-    description: string;
+    quiz: {
+        id: string;
+        title: string;
+        description: string;
+        duration: number;
+        createdBy: string;
+        createdAt: string;
+    };
+    roomId: string;
     score: number;
+    correctAnswers: number;
     totalQuestions: number;
-    completedAt: string;
+    answeredQuestions: number;
+    accuracy: number;
+    totalPossibleMarks: number;
+    completionTime: number | null;
+    completed: boolean;
+    joinedAt: string;
+    finishedAt: string | null;
     status: 'completed' | 'incomplete';
-    duration: string;
 };
 
-// Dummy data for past quizzes
-const dummyPastQuizzes: PastQuiz[] = [
-    {
-        id: '1',
-        title: 'JavaScript Fundamentals',
-        description: 'Basic concepts of JavaScript programming',
-        score: 85,
-        totalQuestions: 20,
-        completedAt: '2024-01-15T10:30:00Z',
-        status: 'completed',
-        duration: '15 min'
-    },
-    {
-        id: '2',
-        title: 'React Hooks Deep Dive',
-        description: 'Advanced React hooks and state management',
-        score: 92,
-        totalQuestions: 15,
-        completedAt: '2024-01-10T14:20:00Z',
-        status: 'completed',
-        duration: '12 min'
-    },
-    {
-        id: '3',
-        title: 'Database Design Principles',
-        description: 'SQL and NoSQL database concepts',
-        score: 78,
-        totalQuestions: 25,
-        completedAt: '2024-01-05T09:15:00Z',
-        status: 'completed',
-        duration: '20 min'
-    },
-    {
-        id: '4',
-        title: 'Web Security Basics',
-        description: 'Understanding common web vulnerabilities',
-        score: 0,
-        totalQuestions: 18,
-        completedAt: '2024-01-02T16:45:00Z',
-        status: 'incomplete',
-        duration: '8 min'
-    }
-];
+type UserStats = {
+    totalQuizzes: number;
+    completedQuizzes: number;
+    incompleteQuizzes: number;
+    totalScore: number;
+    averageScore: number;
+    overallAccuracy: number;
+    totalCorrectAnswers: number;
+    totalQuestionsAttempted: number;
+};
+
+type UserQuizHistoryData = {
+    user: {
+        id: string;
+        username: string;
+        email: string;
+    };
+    quizHistory: UserQuizHistory[];
+    userStats: UserStats;
+};
 
 export default function Dashboard() {
     const router = useRouter();
@@ -93,6 +89,11 @@ export default function Dashboard() {
     const [joinLoading, setJoinLoading] = useState(false);
     const [joinError, setJoinError] = useState('');
     const [joinSuccess, setJoinSuccess] = useState('');
+
+    // Quiz history states
+    const [quizHistoryData, setQuizHistoryData] = useState<UserQuizHistoryData | null>(null);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState('');
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -106,8 +107,28 @@ export default function Dashboard() {
             const user: User = JSON.parse(userString);
             setUserData(user);
             setLoading(false);
+
+            // Fetch quiz history for participants
+            if (user.role === 'PARTICIPANT') {
+                fetchQuizHistory(user.id);
+            }
         }
     }, [router]);
+
+    const fetchQuizHistory = async (userId: string) => {
+        try {
+            setHistoryLoading(true);
+            setHistoryError('');
+
+            const response = await axios.get(`/api/user/quiz-history/${userId}`);
+            setQuizHistoryData(response.data);
+        } catch (error: any) {
+            console.error('Error fetching quiz history:', error);
+            setHistoryError('Failed to load quiz history');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
 
     const handleJoinRoom = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -287,77 +308,94 @@ export default function Dashboard() {
                                 </div>
                             </CardHeader>
                             <CardContent>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full">
-                                        <thead>
-                                            <tr className="border-b border-gray-200">
-                                                <th className="text-left py-3 px-4 font-medium text-gray-700">Quiz</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-700">Score</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                                                <th className="text-left py-3 px-4 font-medium text-gray-700">Duration</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {dummyPastQuizzes.map((quiz) => (
-                                                <tr key={quiz.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                                                    <td className="py-4 px-4">
-                                                        <div>
-                                                            <div className="font-medium text-gray-900">{quiz.title}</div>
-                                                            <div className="text-sm text-gray-500">{quiz.description}</div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <div className="flex items-center space-x-2">
-                                                            <Trophy className={`h-4 w-4 ${getScoreColor(quiz.score, quiz.totalQuestions)}`} />
-                                                            <span className={`font-medium ${getScoreColor(quiz.score, quiz.totalQuestions)}`}>
-                                                                {quiz.score}/{quiz.totalQuestions}
-                                                            </span>
-                                                            <span className="text-gray-500 text-sm">
-                                                                ({Math.round((quiz.score / quiz.totalQuestions) * 100)}%)
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <div className="flex items-center space-x-2">
-                                                            {quiz.status === 'completed' ? (
-                                                                <>
-                                                                    <CheckCircle className="h-4 w-4 text-green-600" />
-                                                                    <span className="text-green-600 font-medium">Completed</span>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <XCircle className="h-4 w-4 text-red-600" />
-                                                                    <span className="text-red-600 font-medium">Incomplete</span>
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <div className="flex items-center space-x-2">
-                                                            <Calendar className="h-4 w-4 text-gray-400" />
-                                                            <span className="text-gray-600">{formatDate(quiz.completedAt)}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-4 px-4">
-                                                        <div className="flex items-center space-x-2">
-                                                            <Clock className="h-4 w-4 text-gray-400" />
-                                                            <span className="text-gray-600">{quiz.duration}</span>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                {dummyPastQuizzes.length === 0 && (
+                                {historyLoading ? (
+                                    <div className="flex items-center justify-center py-8">
+                                        <RefreshCw className="h-6 w-6 animate-spin text-indigo-600 mr-2" />
+                                        <span className="text-gray-600">Loading quiz history...</span>
+                                    </div>
+                                ) : historyError ? (
+                                    <div className="flex items-center justify-center py-8 text-red-600">
+                                        <AlertCircle className="h-5 w-5 mr-2" />
+                                        <span>{historyError}</span>
+                                    </div>
+                                ) : quizHistoryData?.quizHistory.length === 0 ? (
                                     <div className="text-center py-12">
                                         <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
                                             <History className="h-8 w-8 text-gray-400" />
                                         </div>
                                         <p className="text-gray-500 text-lg">No quiz history yet</p>
                                         <p className="text-gray-400 text-sm mt-2">Join your first quiz to see your progress here</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="border-b border-gray-200">
+                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Quiz</th>
+                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Score</th>
+                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
+                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
+                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {quizHistoryData?.quizHistory.map((quiz) => (
+                                                    <tr key={quiz.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                                                        <td className="py-4 px-4">
+                                                            <div>
+                                                                <div className="font-medium text-gray-900">{quiz.quiz.title}</div>
+                                                                <div className="text-sm text-gray-500">{quiz.quiz.description}</div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-4">
+                                                            <div className="flex items-center space-x-2">
+                                                                <Trophy className={`h-4 w-4 ${getScoreColor(quiz.score, quiz.totalPossibleMarks)}`} />
+                                                                <span className={`font-medium ${getScoreColor(quiz.score, quiz.totalPossibleMarks)}`}>
+                                                                    {quiz.score}/{quiz.totalPossibleMarks}
+                                                                </span>
+                                                                <span className="text-gray-500 text-sm">
+                                                                    ({quiz.accuracy}%)
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-4">
+                                                            <div className="flex items-center space-x-2">
+                                                                {quiz.status === 'completed' ? (
+                                                                    <>
+                                                                        <CheckCircle className="h-4 w-4 text-green-600" />
+                                                                        <span className="text-green-600 font-medium">Completed</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <XCircle className="h-4 w-4 text-red-600" />
+                                                                        <span className="text-red-600 font-medium">Incomplete</span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-4">
+                                                            <div className="flex items-center space-x-2">
+                                                                <Calendar className="h-4 w-4 text-gray-400" />
+                                                                <span className="text-gray-600">
+                                                                    {formatDate(quiz.finishedAt || quiz.joinedAt)}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-4 px-4">
+                                                            {quiz.completed && (
+                                                                <button
+                                                                    onClick={() => window.open(`/leaderboard?roomId=${quiz.roomId}`, '_blank')}
+                                                                    className="flex items-center space-x-1 text-indigo-600 hover:text-indigo-800 text-sm"
+                                                                >
+                                                                    <ExternalLink className="h-3 w-3" />
+                                                                    <span>View Leaderboard</span>
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 )}
                             </CardContent>
@@ -371,7 +409,7 @@ export default function Dashboard() {
                                         <div>
                                             <p className="text-green-100 text-sm">Quizzes Completed</p>
                                             <p className="text-3xl font-bold">
-                                                {dummyPastQuizzes.filter(q => q.status === 'completed').length}
+                                                {quizHistoryData?.userStats.completedQuizzes || 0}
                                             </p>
                                         </div>
                                         <CheckCircle className="h-12 w-12 text-green-200" />
@@ -383,14 +421,9 @@ export default function Dashboard() {
                                 <CardContent className="p-6">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="text-blue-100 text-sm">Average Score</p>
+                                            <p className="text-blue-100 text-sm">Average Accuracy</p>
                                             <p className="text-3xl font-bold">
-                                                {Math.round(
-                                                    dummyPastQuizzes
-                                                        .filter(q => q.status === 'completed')
-                                                        .reduce((acc, q) => acc + (q.score / q.totalQuestions) * 100, 0) /
-                                                    dummyPastQuizzes.filter(q => q.status === 'completed').length || 0
-                                                )}%
+                                                {quizHistoryData?.userStats.overallAccuracy || 0}%
                                             </p>
                                         </div>
                                         <Trophy className="h-12 w-12 text-blue-200" />
@@ -402,12 +435,9 @@ export default function Dashboard() {
                                 <CardContent className="p-6">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <p className="text-purple-100 text-sm">Total Time Spent</p>
+                                            <p className="text-purple-100 text-sm">Total Score</p>
                                             <p className="text-3xl font-bold">
-                                                {dummyPastQuizzes.reduce((acc, q) => {
-                                                    const minutes = parseInt(q.duration.split(' ')[0]);
-                                                    return acc + minutes;
-                                                }, 0)} min
+                                                {quizHistoryData?.userStats.totalScore || 0}
                                             </p>
                                         </div>
                                         <Clock className="h-12 w-12 text-purple-200" />

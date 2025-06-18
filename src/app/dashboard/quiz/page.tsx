@@ -39,6 +39,8 @@ type Quiz = {
 type Answer = {
     questionId: string;
     selectedOption: string;
+    isCorrect?: boolean;
+    marksEarned?: number;
 };
 
 type QuizState = 'loading' | 'ready' | 'taking' | 'completed' | 'error';
@@ -48,9 +50,30 @@ function QuizPageContent() {
     const searchParams = useSearchParams();
     const inviteCode = searchParams.get('inviteCode');
 
+    // Get user ID from authenticated user
+    const getUserId = () => {
+        try {
+            // First, try to get userId from signin (stored during authentication)
+            const userString = localStorage.getItem('user');
+            if (userString) {
+                const user = JSON.parse(userString);
+                if (user && user.id) {
+                    return user.id;
+                }
+            }
+
+            // If no authenticated user, show error
+            throw new Error('Please sign in to join the quiz');
+        } catch (error) {
+            console.error('Error getting user ID:', error);
+            throw new Error('Please sign in to join the quiz');
+        }
+    };
+
     // State management
     const [state, setState] = useState<QuizState>('loading');
     const [roomId, setRoomId] = useState<string | null>(null);
+    const [participationId, setParticipationId] = useState<string | null>(null);
     const [quiz, setQuiz] = useState<Quiz | null>(null);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [answers, setAnswers] = useState<Answer[]>([]);
@@ -59,6 +82,8 @@ function QuizPageContent() {
     const [timeRemaining, setTimeRemaining] = useState<number>(0);
     const [quizStarted, setQuizStarted] = useState(false);
     const [quizStartTime, setQuizStartTime] = useState<Date | null>(null);
+    const [currentScore, setCurrentScore] = useState<number>(0);
+    const [submittingAnswer, setSubmittingAnswer] = useState<boolean>(false);
 
     // Initialize quiz data
     useEffect(() => {
@@ -72,13 +97,43 @@ function QuizPageContent() {
             try {
                 setState('loading');
 
-                // Step 1: Get room ID from invite code
+                // Step 1: Get room ID from invite code and join the room
                 const roomResponse = await axios.post('/api/rooms/get-room-id', {
                     inviteCode: inviteCode
                 });
 
                 const fetchedRoomId = roomResponse.data.roomId;
                 setRoomId(fetchedRoomId);
+
+                // Step 1.5: Get authenticated user ID and join the room
+                let userId;
+                try {
+                    userId = getUserId();
+                } catch (error: any) {
+                    setError(error.message || 'Please sign in to join the quiz');
+                    setState('error');
+                    return;
+                }
+
+                if (!userId) {
+                    setError('Unable to get user ID. Please sign in and try again.');
+                    setState('error');
+                    return;
+                }
+
+                const joinResponse = await axios.post('/api/rooms/join', {
+                    inviteCode: inviteCode,
+                    userId: userId
+                });
+
+                const fetchedParticipationId = joinResponse.data.participationId;
+                if (!fetchedParticipationId) {
+                    setError('Failed to join room. Please try again.');
+                    setState('error');
+                    return;
+                }
+
+                setParticipationId(fetchedParticipationId);
 
                 // Step 2: Fetch questions for the room
                 const questionsResponse = await axios.get(`/api/questions/get/${fetchedRoomId}`);
@@ -183,7 +238,6 @@ function QuizPageContent() {
         setQuizStarted(true);
         setState('taking');
 
-        // Set timer based on quiz duration (convert minutes to seconds)
         const durationSeconds = quiz.duration * 60;
         setTimeRemaining(durationSeconds);
 
@@ -198,24 +252,65 @@ function QuizPageContent() {
         localStorage.setItem(sessionKey, JSON.stringify(session));
     };
 
-    const handleAnswerSelect = (questionId: string, selectedOption: string) => {
-        const updatedAnswers = answers.map(answer =>
-            answer.questionId === questionId
-                ? { ...answer, selectedOption }
-                : answer
-        );
-        setAnswers(updatedAnswers);
+    const handleAnswerSelect = async (questionId: string, selectedOption: string) => {
+        // Check if this answer was already submitted
+        const existingAnswer = answers.find(a => a.questionId === questionId);
+        if (existingAnswer?.selectedOption === selectedOption) {
+            return; // Same answer, no need to resubmit
+        }
 
-        // Save progress to localStorage
-        if (roomId && quizStartTime) {
-            const sessionKey = `quiz_session_${roomId}`;
-            const session = {
-                startTime: quizStartTime.toISOString(),
-                duration: quiz?.duration || 30,
-                answers: updatedAnswers,
-                currentQuestionIndex: currentQuestionIndex
-            };
-            localStorage.setItem(sessionKey, JSON.stringify(session));
+        if (existingAnswer?.selectedOption) {
+            // Answer already submitted, don't allow changes
+            setError('Answer already submitted for this question');
+            return;
+        }
+
+        if (!participationId) {
+            setError('Unable to submit answer: No participation ID');
+            return;
+        }
+
+        setSubmittingAnswer(true);
+        setError('');
+
+        try {
+            // Submit answer to API
+            const response = await axios.post('/api/questions/submit-answer', {
+                participationId,
+                questionId,
+                selectedOption
+            });
+
+            const { totalScore, isCorrect, marksEarned } = response.data;
+
+            // Update local state
+            const updatedAnswers = answers.map(answer =>
+                answer.questionId === questionId
+                    ? { ...answer, selectedOption, isCorrect, marksEarned }
+                    : answer
+            );
+            setAnswers(updatedAnswers);
+            setCurrentScore(totalScore);
+
+            // Save progress to localStorage
+            if (roomId && quizStartTime) {
+                const sessionKey = `quiz_session_${roomId}`;
+                const session = {
+                    startTime: quizStartTime.toISOString(),
+                    duration: quiz?.duration || 30,
+                    answers: updatedAnswers,
+                    currentQuestionIndex: currentQuestionIndex,
+                    participationId: participationId,
+                    currentScore: totalScore
+                };
+                localStorage.setItem(sessionKey, JSON.stringify(session));
+            }
+
+        } catch (error: any) {
+            console.error('Error submitting answer:', error);
+            setError(error.response?.data?.error || 'Failed to submit answer');
+        } finally {
+            setSubmittingAnswer(false);
         }
     };
 
@@ -232,18 +327,35 @@ function QuizPageContent() {
     };
 
     const handleSubmitQuiz = async () => {
+        if (!participationId) {
+            setError('Unable to submit quiz: No participation ID');
+            return;
+        }
+
         try {
-            // Here you would typically submit answers to an API
-            // For now, we'll just show completion
+            // Complete the quiz
+            const response = await axios.post('/api/quiz/complete', {
+                participationId
+            });
+
+            const { results } = response.data;
+
+            // Store results for display
+            if (roomId) {
+                const resultsKey = `quiz_results_${roomId}`;
+                localStorage.setItem(resultsKey, JSON.stringify(results));
+            }
+
             setState('completed');
 
-            // Clean up localStorage session
+            // Clean up session localStorage
             if (roomId) {
                 const sessionKey = `quiz_session_${roomId}`;
                 localStorage.removeItem(sessionKey);
             }
         } catch (error: any) {
-            setError('Failed to submit quiz');
+            console.error('Error submitting quiz:', error);
+            setError(error.response?.data?.error || 'Failed to submit quiz');
         }
     };
 
@@ -284,14 +396,24 @@ function QuizPageContent() {
                         <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
                         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Quiz Error</h2>
                         <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
-                        <Button 
-                            onClick={() => router.push('/dashboard')}
-                            variant="outline"
-                            className="w-full"
-                        >
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Dashboard
-                        </Button>
+                        <div className="flex gap-4">
+                            <Button
+                                onClick={() => router.push('/dashboard')}
+                                variant="outline"
+                                className="flex-1"
+                            >
+                                <ArrowLeft className="h-4 w-4 mr-2" />
+                                Back to Dashboard
+                            </Button>
+                            {error.includes('sign in') && (
+                                <Button
+                                    onClick={() => router.push('/signin')}
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                                >
+                                    Sign In
+                                </Button>
+                            )}
+                        </div>
                     </CardContent>
                 </Card>
             </div>
@@ -386,7 +508,7 @@ function QuizPageContent() {
                                             Question {currentQuestionIndex + 1} of {questions.length}
                                         </h1>
                                         <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            {getAnsweredCount()} of {questions.length} answered
+                                            {getAnsweredCount()} of {questions.length} answered • Score: {currentScore} points
                                         </p>
                                     </div>
                                 </div>
@@ -438,6 +560,30 @@ function QuizPageContent() {
                             ></div>
                         </div>
                     </div>
+
+                    {/* Error Display */}
+                    {error && (
+                        <Card className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700">
+                            <CardContent className="p-4">
+                                <div className="flex items-center space-x-2">
+                                    <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                                    <span className="text-red-700 dark:text-red-300 font-medium">{error}</span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Submission Status */}
+                    {submittingAnswer && (
+                        <Card className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+                            <CardContent className="p-4">
+                                <div className="flex items-center space-x-2">
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                    <span className="text-blue-700 dark:text-blue-300 font-medium">Submitting answer...</span>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
 
                     {/* Question Card */}
                     <Card className="mb-6 bg-white dark:bg-gray-800 shadow-lg">
@@ -575,6 +721,11 @@ function QuizPageContent() {
 
     // Quiz completed state
     if (state === 'completed') {
+        // Get results from localStorage if available
+        const resultsKey = `quiz_results_${roomId}`;
+        const savedResults = roomId ? localStorage.getItem(resultsKey) : null;
+        const results = savedResults ? JSON.parse(savedResults) : null;
+
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-6">
                 <Card className="w-full max-w-2xl">
@@ -588,31 +739,53 @@ function QuizPageContent() {
                         </p>
 
                         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 mb-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                                 <div>
-                                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{questions.length}</p>
-                                    <p className="text-sm text-gray-600 dark:text-gray-400">Questions</p>
+                                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                                        {results?.totalScore || currentScore}
+                                    </p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Your Score</p>
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">{getAnsweredCount()}</p>
+                                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                        {results?.correctAnswers || answers.filter(a => a.isCorrect).length}
+                                    </p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Correct</p>
+                                </div>
+                                <div>
+                                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                        {results?.answeredQuestions || getAnsweredCount()}
+                                    </p>
                                     <p className="text-sm text-gray-600 dark:text-gray-400">Answered</p>
                                 </div>
                                 <div>
                                     <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                                        {questions.reduce((sum, q) => sum + q.marks, 0)}
+                                        {results?.percentage || Math.round((answers.filter(a => a.isCorrect).length / questions.length) * 100)}%
                                     </p>
-                                    <p className="text-sm text-gray-600 dark:text-gray-400">Total Marks</p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-400">Accuracy</p>
                                 </div>
                             </div>
                         </div>
 
-                        <Button
-                            onClick={() => router.push('/dashboard')}
-                            className="w-full bg-indigo-600 hover:bg-indigo-700"
-                        >
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Dashboard
-                        </Button>
+                        <div className="flex gap-4">
+                            <Button
+                                onClick={() => router.push('/dashboard')}
+                                variant="outline"
+                                className="flex-1"
+                            >
+                                <ArrowLeft className="h-4 w-4 mr-2" />
+                                Back to Dashboard
+                            </Button>
+                            {roomId && (
+                                <Button
+                                    onClick={() => router.push(`/leaderboard?roomId=${roomId}`)}
+                                    className="flex-1 bg-yellow-600 hover:bg-yellow-700"
+                                >
+                                    <Trophy className="h-4 w-4 mr-2" />
+                                    View Leaderboard
+                                </Button>
+                            )}
+                        </div>
                     </CardContent>
                 </Card>
             </div>

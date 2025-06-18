@@ -3,67 +3,53 @@
 import { BackgroundBeamsWithCollision } from "@/components/ui/background-beams-with-collision";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Brain, Sparkles, ArrowRight, Trophy, Users, Calendar, Crown, Target } from "lucide-react";
+import { Brain, Sparkles, ArrowRight, Trophy, Users, Calendar, Crown, Target, RefreshCw, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { isTokenValid } from "@/lib/auth.client";
+import axios from 'axios';
 
-// Enhanced dummy data for past quizzes
-const pastQuizzes = [
-  {
-    id: '1',
-    quizName: "JavaScript Fundamentals Challenge",
-    createdBy: "Dr. Sarah Johnson",
-    quizDate: "2024-01-15",
-    winner: "Abid Hussain",
-    participants: 156,
-    category: "Programming",
-    difficulty: "Intermediate"
-  },
-  {
-    id: '2',
-    quizName: "World Geography Masters",
-    createdBy: "Prof. Michael Brown",
-    quizDate: "2024-01-12",
-    winner: "Abid Hussain",
-    participants: 203,
-    category: "Geography",
-    difficulty: "Advanced"
-  },
-  {
-    id: '3',
-    quizName: "Science Trivia Showdown",
-    createdBy: "Dr. Lisa Martinez",
-    quizDate: "2024-01-10",
-    winner: "David Kim",
-    participants: 89,
-    category: "Science",
-    difficulty: "Beginner"
-  },
-  {
-    id: '4',
-    quizName: "History Through Ages",
-    createdBy: "Prof. Robert Taylor",
-    quizDate: "2024-01-08",
-    winner: "Sophie Anderson",
-    participants: 134,
-    category: "History",
-    difficulty: "Intermediate"
-  },
-  {
-    id: '5',
-    quizName: "Math Olympiad Prep",
-    createdBy: "Dr. Jennifer Lee",
-    quizDate: "2024-01-05",
-    winner: "Ryan Patel",
-    participants: 78,
-    category: "Mathematics",
-    difficulty: "Advanced"
-  }
-];
+// Types for real leaderboard data
+type GlobalLeaderboardEntry = {
+  rank: number;
+  participant: {
+    id: string;
+    username: string;
+  };
+  quiz: {
+    id: string;
+    title: string;
+    description: string;
+    duration: number;
+    createdBy: string;
+    createdAt: string;
+  };
+  roomId: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  accuracy: number;
+  completionTime: number | null;
+  finishedAt: string;
+};
+
+type PlatformStats = {
+  totalQuizzes: number;
+  totalParticipations: number;
+  totalUsers: number;
+  averageScore: number;
+};
+
+type GlobalLeaderboardData = {
+  globalLeaderboard: GlobalLeaderboardEntry[];
+  platformStats: PlatformStats;
+};
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState<GlobalLeaderboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -72,7 +58,25 @@ export default function Home() {
     if (token && isTokenValid(token) && userString) {
       setIsLoggedIn(true);
     }
+
+    // Fetch global leaderboard data
+    fetchGlobalLeaderboard();
   }, []);
+
+  const fetchGlobalLeaderboard = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      const response = await axios.get('/api/leaderboard/global?limit=5');
+      setLeaderboardData(response.data);
+    } catch (error: any) {
+      console.error('Error fetching global leaderboard:', error);
+      setError('Failed to load leaderboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -80,15 +84,6 @@ export default function Home() {
       month: 'short',
       day: 'numeric'
     });
-  };
-
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner': return 'text-green-600 bg-green-100';
-      case 'Intermediate': return 'text-yellow-600 bg-yellow-100';
-      case 'Advanced': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
   };
 
   return (
@@ -144,16 +139,22 @@ export default function Home() {
               {/* Stats */}
               <div className="grid grid-cols-3 gap-6 pt-8">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-indigo-600">500+</div>
+                  <div className="text-3xl font-bold text-indigo-600">
+                    {leaderboardData?.platformStats.totalQuizzes || '...'}
+                  </div>
                   <div className="text-sm text-gray-600">Quizzes Created</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">10K+</div>
-                  <div className="text-sm text-gray-600">Participants</div>
+                  <div className="text-3xl font-bold text-purple-600">
+                    {leaderboardData?.platformStats.totalParticipations || '...'}
+                  </div>
+                  <div className="text-sm text-gray-600">Quiz Attempts</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-pink-600">50+</div>
-                  <div className="text-sm text-gray-600">Categories</div>
+                  <div className="text-3xl font-bold text-pink-600">
+                    {leaderboardData?.platformStats.totalUsers || '...'}
+                  </div>
+                  <div className="text-sm text-gray-600">Active Users</div>
                 </div>
               </div>
             </div>
@@ -175,38 +176,69 @@ export default function Home() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {pastQuizzes.map((quiz) => (
-                      <div key={quiz.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <h3 className="font-semibold text-gray-900 truncate">{quiz.quizName}</h3>
-                            <span className={`px-2 py-1 text-xs rounded-full ${getDifficultyColor(quiz.difficulty)}`}>
-                              {quiz.difficulty}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-4 text-sm text-gray-600">
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="h-3 w-3" />
-                              <span>{formatDate(quiz.quizDate)}</span>
+                  {loading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="h-6 w-6 animate-spin text-indigo-600 mr-2" />
+                      <span className="text-gray-600">Loading champions...</span>
+                    </div>
+                  ) : error ? (
+                    <div className="flex items-center justify-center py-8 text-red-600">
+                      <AlertCircle className="h-5 w-5 mr-2" />
+                      <span>{error}</span>
+                    </div>
+                  ) : leaderboardData?.globalLeaderboard.length === 0 ? (
+                    <div className="text-center py-8 text-gray-600">
+                      <Trophy className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                      <p>No quiz champions yet. Be the first!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                      {leaderboardData?.globalLeaderboard.map((entry) => (
+                        <div key={`${entry.participant.id}-${entry.quiz.id}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <h3 className="font-semibold text-gray-900 truncate">{entry.quiz.title}</h3>
+                              <span className="px-2 py-1 text-xs rounded-full bg-indigo-100 text-indigo-600">
+                                {entry.score} pts
+                              </span>
                             </div>
+                            <div className="flex items-center space-x-4 text-sm text-gray-600">
+                              <div className="flex items-center space-x-1">
+                                <Calendar className="h-3 w-3" />
+                                <span>{formatDate(entry.finishedAt)}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <Target className="h-3 w-3" />
+                                <span>{entry.accuracy}% accuracy</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 ml-4">
                             <div className="flex items-center space-x-1">
-                              <Users className="h-3 w-3" />
-                              <span>{quiz.participants}</span>
+                              <Crown className="h-4 w-4 text-yellow-500" />
+                              <span className="font-medium text-gray-900">{entry.participant.username}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-2 ml-4">
-                          <Crown className="h-4 w-4 text-yellow-500" />
-                          <span className="font-medium text-gray-900">{quiz.winner}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="mt-6 text-center">
-                    <Button variant="outline" className="w-full">
-                      View All Quiz Results
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={fetchGlobalLeaderboard}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Refreshing...
+                        </>
+                      ) : (
+                        'Refresh Results'
+                      )}
                     </Button>
                   </div>
                 </CardContent>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Copy, Check, Users, Clock, Sparkles, Plus, Trash2, Save, HelpCircle } from "lucide-react";
 import AdminRoomList from "./AdminRoomList";
+import AdminDashboardStats from "./AdminDashboardStats";
 
 type CreateQuizProps = {
     userId: string;
@@ -827,6 +828,11 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
                     </Card>
                 </div>
             )}
+
+            {/* Admin Dashboard Stats */}
+            <div className="mt-8">
+                <AdminDashboardStats adminId={userId} />
+            </div>
 
             {/* Room Management Section */}
             <div className="mt-8">

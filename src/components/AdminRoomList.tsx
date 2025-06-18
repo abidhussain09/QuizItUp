@@ -14,7 +14,8 @@ import {
     CheckCircle,
     Clock,
     BarChart3,
-    RefreshCw
+    RefreshCw,
+    Trophy
 } from "lucide-react";
 
 // Types
@@ -316,6 +317,7 @@ export default function AdminRoomList({ adminId }: AdminRoomListProps) {
                                         <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">Participants</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">Questions</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">Status</th>
+                                        <th className="text-left py-3 px-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -391,6 +393,18 @@ export default function AdminRoomList({ adminId }: AdminRoomListProps) {
                                             </td>
                                             <td className="py-4 px-4">
                                                 {getStatusBadge(room)}
+                                            </td>
+                                            <td className="py-4 px-4">
+                                                <Button
+                                                    onClick={() => window.open(`/leaderboard?roomId=${room.id}`, '_blank')}
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8"
+                                                    disabled={room.completedParticipants === 0}
+                                                >
+                                                    <Trophy className="h-3 w-3 mr-1" />
+                                                    Leaderboard
+                                                </Button>
                                             </td>
                                         </tr>
                                     ))}
