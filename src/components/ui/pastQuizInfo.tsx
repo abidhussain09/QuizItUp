@@ -1,3 +1,6 @@
+// Legacy component - kept for reference
+// The new home page uses an improved design
+
 const data=[
     {
         quizName:"First Quiz",
