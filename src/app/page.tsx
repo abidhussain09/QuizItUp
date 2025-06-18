@@ -15,7 +15,7 @@ const pastQuizzes = [
     quizName: "JavaScript Fundamentals Challenge",
     createdBy: "Dr. Sarah Johnson",
     quizDate: "2024-01-15",
-    winner: "Alex Chen",
+    winner: "Abid Hussain",
     participants: 156,
     category: "Programming",
     difficulty: "Intermediate"
@@ -25,7 +25,7 @@ const pastQuizzes = [
     quizName: "World Geography Masters",
     createdBy: "Prof. Michael Brown",
     quizDate: "2024-01-12",
-    winner: "Emma Wilson",
+    winner: "Abid Hussain",
     participants: 203,
     category: "Geography",
     difficulty: "Advanced"

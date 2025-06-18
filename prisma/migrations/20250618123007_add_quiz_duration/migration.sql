@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Quiz" ADD COLUMN     "duration" INTEGER NOT NULL DEFAULT 30;

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(req: NextRequest) {
     try {
-        const { title, description, creatorId } = await req.json();
+        const { title, description, duration, creatorId } = await req.json();
 
         if (!title || !description || !creatorId) {
             return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -12,16 +12,29 @@ export async function POST(req: NextRequest) {
             });
         }
 
+        // Validate duration
+        if (duration !== undefined) {
+            if (typeof duration !== 'number' || duration < 5 || duration > 180) {
+                return new Response(JSON.stringify({ error: 'Duration must be between 5 and 180 minutes' }), {
+                    status: 400,
+                });
+            }
+        }
+
         const quiz = await prisma.quiz.create({
             data: {
                 id: uuidv4(),
                 title,
                 description,
+                duration: duration || 30, // Default to 30 minutes if not provided
                 creatorId,
             },
         });
 
-        return new Response(JSON.stringify({ quizId: quiz.id }), { status: 201 });
+        return new Response(JSON.stringify({
+            quizId: quiz.id,
+            duration: quiz.duration
+        }), { status: 201 });
     } catch (error) {
         console.error('Error creating quiz:', error);
         return new Response(JSON.stringify({ error: 'Failed to create quiz' }), {

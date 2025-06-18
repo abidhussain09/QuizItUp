@@ -34,6 +34,7 @@ model Quiz {
   id          String   @id @default(uuid())
   title       String
   description String
+  duration    Int      @default(30) // Duration in minutes
   creatorId   String
   createdAt   DateTime @default(now())
 

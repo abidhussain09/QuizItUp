@@ -118,16 +118,20 @@ export default function Dashboard() {
         setJoinSuccess('');
 
         try {
-            const response = await axios.post('/api/rooms/join', {
+            await axios.post('/api/rooms/join', {
                 inviteCode: inviteCode.trim().toUpperCase(),
                 userId: userData.id
             });
 
-            setJoinSuccess(`Successfully joined room! Room ID: ${response.data.roomId}`);
-            setInviteCode('');
+            // Navigate to quiz page with invite code
+            router.push(`/dashboard/quiz?inviteCode=${inviteCode.trim().toUpperCase()}`);
         } catch (error: any) {
-            setJoinError(error.response?.data?.error || 'Failed to join room');
-        } finally {
+            const errorMessage = error.response?.data?.error || 'Failed to join room';
+            if (error.response?.status === 404) {
+                setJoinError(`Invalid invite code "${inviteCode.trim().toUpperCase()}". Please check the code and try again.`);
+            } else {
+                setJoinError(errorMessage);
+            }
             setJoinLoading(false);
         }
     };
@@ -238,7 +242,7 @@ export default function Dashboard() {
                                                 value={inviteCode}
                                                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                                                 maxLength={6}
-                                                className="mt-1 bg-white/10 border-white/20 text-white placeholder-white/60 focus:border-white focus:ring-white"
+                                                className="mt-1 bg-white/80 border-white/20 text-black placeholder-black focus:border-white focus:ring-white"
                                                 disabled={joinLoading}
                                                 required
                                             />

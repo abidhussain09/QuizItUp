@@ -13,12 +13,50 @@ export async function POST(req: NextRequest) {
 
         const room = await prisma.quizRoom.findUnique({
             where: { inviteCode },
+            include: {
+                quiz: {
+                    include: {
+                        _count: {
+                            select: { questions: true }
+                        }
+                    }
+                }
+            }
         });
 
         if (!room) {
-            return new Response(JSON.stringify({ error: 'Invalid code' }), {
+            return new Response(JSON.stringify({ error: 'Invalid invite code' }), {
                 status: 404,
             });
+        }
+
+        // Check if quiz has questions
+        if (room.quiz._count.questions === 0) {
+            return new Response(JSON.stringify({ error: 'This quiz has no questions yet. Please try again later.' }), {
+                status: 400,
+            });
+        }
+
+        // Check time-based availability
+        const now = new Date();
+        if (room.startTime && room.endTime) {
+            if (now < room.startTime) {
+                return new Response(JSON.stringify({
+                    error: 'Quiz has not started yet',
+                    startTime: room.startTime.toISOString()
+                }), {
+                    status: 400,
+                });
+            }
+
+            if (now > room.endTime) {
+                return new Response(JSON.stringify({
+                    error: 'Quiz has ended and is no longer accepting participants',
+                    endTime: room.endTime.toISOString()
+                }), {
+                    status: 400,
+                });
+            }
         }
 
         const existing = await prisma.participation.findFirst({
@@ -26,8 +64,12 @@ export async function POST(req: NextRequest) {
         });
 
         if (existing) {
-            return new Response(JSON.stringify({ error: 'Already joined this room' }), {
-                status: 409,
+            return new Response(JSON.stringify({
+                message: 'Already joined',
+                roomId: room.id,
+                participationId: existing.id,
+            }), {
+                status: 200,
             });
         }
 
