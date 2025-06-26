@@ -22,6 +22,7 @@ import {
 type Question = {
     id: string;
     text: string;
+    imageUrl?: string;
     optionA: string;
     optionB: string;
     optionC: string;
@@ -598,6 +599,21 @@ function QuizPageContent() {
                                     </span>
                                 </div>
                             </div>
+                            {/* Question Image */}
+                            {currentQuestion.imageUrl && (
+                                <div className="mt-4">
+                                    <img
+                                        src={currentQuestion.imageUrl}
+                                        alt="Question figure"
+                                        className="max-w-full h-auto max-h-96 mx-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm"
+                                        onError={(e) => {
+                                            console.error('Failed to load question image:', currentQuestion.imageUrl);
+                                            // Hide the image if it fails to load
+                                            e.currentTarget.style.display = 'none';
+                                        }}
+                                    />
+                                </div>
+                            )}
                         </CardHeader>
                         <CardContent className="space-y-4">
                             {/* Options */}

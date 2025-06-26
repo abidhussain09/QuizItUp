@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Copy, Check, Users, Clock, Sparkles, Plus, Trash2, Save, HelpCircle } from "lucide-react";
 import AdminRoomList from "./AdminRoomList";
 import AdminDashboardStats from "./AdminDashboardStats";
+import ImageUpload from "./ImageUpload";
 
 type CreateQuizProps = {
     userId: string;
@@ -19,6 +20,7 @@ type QuizState = 'idle' | 'creating' | 'created' | 'error';
 type Question = {
     id: string;
     text: string;
+    imageUrl?: string;
     optionA: string;
     optionB: string;
     optionC: string;
@@ -29,6 +31,7 @@ type Question = {
 
 type QuestionForm = {
     text: string;
+    imageUrl: string;
     optionA: string;
     optionB: string;
     optionC: string;
@@ -70,6 +73,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
     const [showQuestionForm, setShowQuestionForm] = useState(false);
     const [questionForm, setQuestionForm] = useState<QuestionForm>({
         text: "",
+        imageUrl: "",
         optionA: "",
         optionB: "",
         optionC: "",
@@ -205,6 +209,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
     const resetQuestionForm = () => {
         setQuestionForm({
             text: "",
+            imageUrl: "",
             optionA: "",
             optionB: "",
             optionC: "",
@@ -237,6 +242,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
             const response = await axios.post('/api/questions/create', {
                 quizId,
                 text: questionForm.text,
+                imageUrl: questionForm.imageUrl || null,
                 optionA: questionForm.optionA,
                 optionB: questionForm.optionB,
                 optionC: questionForm.optionC,
@@ -616,6 +622,14 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
                                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:border-purple-500 focus:ring-1 focus:ring-purple-500 resize-none bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                                                 />
                                             </div>
+
+                                            {/* Image Upload */}
+                                            <ImageUpload
+                                                onImageUpload={(imageUrl) => setQuestionForm(prev => ({ ...prev, imageUrl }))}
+                                                onImageRemove={() => setQuestionForm(prev => ({ ...prev, imageUrl: "" }))}
+                                                currentImageUrl={questionForm.imageUrl}
+                                                disabled={questionLoading}
+                                            />
 
                                             {/* Options */}
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

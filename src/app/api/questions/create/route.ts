@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
         const {
             quizId,
             text,
+            imageUrl,
             optionA,
             optionB,
             optionC,
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
             data: {
                 quizId,
                 text,
+                imageUrl: imageUrl || null,
                 optionA,
                 optionB,
                 optionC,

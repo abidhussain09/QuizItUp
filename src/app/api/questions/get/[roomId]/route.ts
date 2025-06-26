@@ -19,6 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { roomId: str
             select: {
                 id: true,
                 text: true,
+                imageUrl: true,
                 optionA: true,
                 optionB: true,
                 optionC: true,

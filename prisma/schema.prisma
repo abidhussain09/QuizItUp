@@ -73,6 +73,7 @@ model Question {
   id            String   @id @default(uuid())
   quizId        String
   text          String
+  imageUrl      String? // Optional image URL for questions with figures
   optionA       String
   optionB       String
   optionC       String
