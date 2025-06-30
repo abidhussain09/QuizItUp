@@ -41,6 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: { adminId: str
                         id: true,
                         title: true,
                         description: true,
+                        duration: true,
                         createdAt: true,
                         _count: {
                             select: {

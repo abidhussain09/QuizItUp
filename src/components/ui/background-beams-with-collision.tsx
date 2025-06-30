@@ -1,8 +1,24 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import React, { useRef, useState, useEffect } from "react";
 
+interface BeamOptions {
+    initialX?: number;
+    translateX?: number;
+    initialY?: number;
+    translateY?: number;
+    rotate?: number;
+    className?: string;
+    duration?: number;
+    delay?: number;
+    repeatDelay?: number;
+}
+
+interface CollisionState {
+    detected: boolean;
+    coordinates: { x: number; y: number } | null;
+}
 
 export const BackgroundBeamsWithCollision = ({
     children,
@@ -14,7 +30,7 @@ export const BackgroundBeamsWithCollision = ({
     const containerRef = useRef<HTMLDivElement>(null);
     const parentRef = useRef<HTMLDivElement>(null);
 
-    const beams = [
+    const beams: BeamOptions[] = [
         {
             initialX: 10,
             translateX: 10,
@@ -72,16 +88,15 @@ export const BackgroundBeamsWithCollision = ({
             ref={parentRef}
             className={cn(
                 "h-screen md:h-[40rem] bg-gradient-to-b from-white to-neutral-100 dark:from-neutral-950 dark:to-neutral-800 relative flex items-center w-full justify-center overflow-hidden",
-                // h-screen if you want bigger
                 className
             )}
         >
-            {beams.map((beam) => (
+            {beams.map((beam, index) => (
                 <CollisionMechanism
-                    key={beam.initialX + "beam-idx"}
+                    key={`beam-${index}-${beam.initialX}`}
                     beamOptions={beam}
-                    containerRef={containerRef}
                     parentRef={parentRef}
+                    containerRef={containerRef}
                 />
             ))}
 
@@ -98,29 +113,19 @@ export const BackgroundBeamsWithCollision = ({
     );
 };
 
-const CollisionMechanism = React.forwardRef<
-    HTMLDivElement,
-    {
-        containerRef: React.RefObject<HTMLDivElement | null>;
-        parentRef: React.RefObject<HTMLDivElement | null>;
-        beamOptions?: {
-            initialX?: number;
-            translateX?: number;
-            initialY?: number;
-            translateY?: number;
-            rotate?: number;
-            className?: string;
-            duration?: number;
-            delay?: number;
-            repeatDelay?: number;
-        };
-    }
->(({ parentRef, containerRef, beamOptions = {} }, ref) => {
+interface CollisionMechanismProps {
+    parentRef: React.RefObject<HTMLDivElement | null>;
+    containerRef: React.RefObject<HTMLDivElement | null>;
+    beamOptions?: BeamOptions;
+}
+
+const CollisionMechanism: React.FC<CollisionMechanismProps> = ({
+    parentRef,
+    containerRef,
+    beamOptions = {},
+}) => {
     const beamRef = useRef<HTMLDivElement>(null);
-    const [collision, setCollision] = useState<{
-        detected: boolean;
-        coordinates: { x: number; y: number } | null;
-    }>({
+    const [collision, setCollision] = useState<CollisionState>({
         detected: false,
         coordinates: null,
     });
@@ -157,9 +162,8 @@ const CollisionMechanism = React.forwardRef<
         };
 
         const animationInterval = setInterval(checkCollision, 50);
-
         return () => clearInterval(animationInterval);
-    }, [cycleCollisionDetected, containerRef]);
+    }, [cycleCollisionDetected, containerRef, parentRef]);
 
     useEffect(() => {
         if (collision.detected && collision.coordinates) {
@@ -221,11 +225,13 @@ const CollisionMechanism = React.forwardRef<
             </AnimatePresence>
         </>
     );
-});
+};
 
-CollisionMechanism.displayName = "CollisionMechanism";
+interface ExplosionProps extends React.HTMLAttributes<HTMLDivElement> {
+    className?: string;
+}
 
-const Explosion = ({ ...props }: React.HTMLProps<HTMLDivElement>) => {
+const Explosion: React.FC<ExplosionProps> = ({ className, ...props }) => {
     const spans = Array.from({ length: 20 }, (_, index) => ({
         id: index,
         initialX: 0,
@@ -235,7 +241,7 @@ const Explosion = ({ ...props }: React.HTMLProps<HTMLDivElement>) => {
     }));
 
     return (
-        <div {...props} className={cn("absolute z-50 h-2 w-2", props.className)}>
+        <div {...props} className={cn("absolute z-50 h-2 w-2", className)}>
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

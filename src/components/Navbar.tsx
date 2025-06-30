@@ -7,9 +7,15 @@ import { isTokenValid } from '@/lib/auth.client';
 import { Button } from '@/components/ui/button';
 import { Brain, LayoutDashboard, LogOut, User, Sparkles } from 'lucide-react';
 
+interface User{
+    id: string;
+    username: string;
+    email: string;
+    role: 'ADMIN' | 'PARTICIPANT';
+};
 export default function Navbar() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<User |any>(null);
     const router = useRouter();
     const pathname = usePathname();
 
