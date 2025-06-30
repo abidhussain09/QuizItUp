@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
-export async function GET(_req: NextRequest, { params }: { params: { roomId: string } }) {
+export async function GET(
+    _req: NextRequest,
+    { params }: { params: Promise<{ roomId: string }> }
+) {
     try {
-        const roomId = params.roomId;
+        const { roomId } = await params;
 
         const room = await prisma.quizRoom.findUnique({
             where: { id: roomId },

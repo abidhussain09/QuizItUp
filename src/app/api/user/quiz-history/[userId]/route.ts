@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
-export async function GET(_req: NextRequest, { params }: { params: { userId: string } }) {
+export async function GET(
+    _req: NextRequest,
+    { params }: { params: Promise<{ userId: string }> }
+) {
     try {
-        const userId = params.userId;
+        const { userId } = await params;
 
         if (!userId) {
             return new Response(JSON.stringify({ error: 'User ID is required' }), {

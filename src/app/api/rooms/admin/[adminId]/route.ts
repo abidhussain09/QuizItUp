@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
-export async function GET(req: NextRequest, { params }: { params: { adminId: string } }) {
+export async function GET(
+    req: NextRequest,
+    { params }: { params: Promise<{ adminId: string }> }
+) {
     try {
-        const adminId = params.adminId;
+        const { adminId } = await params;
 
         if (!adminId) {
             return new Response(JSON.stringify({ error: 'Admin ID is required' }), {
