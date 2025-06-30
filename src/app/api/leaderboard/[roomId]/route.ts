@@ -1,9 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
-export async function GET(_req: NextRequest, { params }: { params: { roomId: string } }) {
+export async function GET(
+    _req: NextRequest,
+    { params }: { params: Promise<{ roomId: string }> }
+) {
     try {
-        const roomId = params.roomId;
+        const { roomId } = await params;
 
         if (!roomId) {
             return new Response(JSON.stringify({ error: 'Room ID is required' }), {
