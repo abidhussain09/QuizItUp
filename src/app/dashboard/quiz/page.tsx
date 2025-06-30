@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,16 @@ type Quiz = {
     title: string;
     description: string;
     duration: number;
+};
+
+type AxiosError = {
+    response?: {
+        data?: {
+            error?: string;
+        };
+        status?: number;
+    };
+    message?: string;
 };
 
 type Answer = {
@@ -110,8 +121,9 @@ function QuizPageContent() {
                 let userId;
                 try {
                     userId = getUserId();
-                } catch (error: any) {
-                    setError(error.message || 'Please sign in to join the quiz');
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'Please sign in to join the quiz';
+                    setError(errorMessage);
                     setState('error');
                     return;
                 }
@@ -161,11 +173,12 @@ function QuizPageContent() {
                 checkExistingSession(fetchedRoomId, quizData);
 
                 setState('ready');
-            } catch (error: any) {
+            } catch (error: unknown) {
                 console.error('Error initializing quiz:', error);
-                const errorMessage = error.response?.data?.error || 'Failed to load quiz';
+                const axiosError = error as AxiosError;
+                const errorMessage = axiosError.response?.data?.error || 'Failed to load quiz';
 
-                if (error.response?.status === 404) {
+                if (axiosError.response?.status === 404) {
                     setError(`Invalid invite code "${inviteCode}". Please check the code and try again.`);
                 } else {
                     setError(errorMessage);
@@ -176,6 +189,41 @@ function QuizPageContent() {
 
         initializeQuiz();
     }, [inviteCode]);
+
+    // Submit quiz function
+    const handleSubmitQuiz = useCallback(async () => {
+        if (!participationId) {
+            setError('Unable to submit quiz: No participation ID');
+            return;
+        }
+
+        try {
+            // Complete the quiz
+            const response = await axios.post('/api/quiz/complete', {
+                participationId
+            });
+
+            const { results } = response.data;
+
+            // Store results for display
+            if (roomId) {
+                const resultsKey = `quiz_results_${roomId}`;
+                localStorage.setItem(resultsKey, JSON.stringify(results));
+            }
+
+            setState('completed');
+
+            // Clean up session localStorage
+            if (roomId) {
+                const sessionKey = `quiz_session_${roomId}`;
+                localStorage.removeItem(sessionKey);
+            }
+        } catch (error: unknown) {
+            console.error('Error submitting quiz:', error);
+            const axiosError = error as AxiosError;
+            setError(axiosError.response?.data?.error || 'Failed to submit quiz');
+        }
+    }, [participationId, roomId]);
 
     // Timer effect
     useEffect(() => {
@@ -192,7 +240,7 @@ function QuizPageContent() {
 
             return () => clearInterval(timer);
         }
-    }, [quizStarted, timeRemaining]);
+    }, [quizStarted, timeRemaining, handleSubmitQuiz]);
 
     const checkExistingSession = (roomId: string, quizData: Quiz) => {
         const sessionKey = `quiz_session_${roomId}`;
@@ -307,9 +355,10 @@ function QuizPageContent() {
                 localStorage.setItem(sessionKey, JSON.stringify(session));
             }
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error submitting answer:', error);
-            setError(error.response?.data?.error || 'Failed to submit answer');
+            const axiosError = error as AxiosError;
+            setError(axiosError.response?.data?.error || 'Failed to submit answer');
         } finally {
             setSubmittingAnswer(false);
         }
@@ -327,38 +376,7 @@ function QuizPageContent() {
         }
     };
 
-    const handleSubmitQuiz = async () => {
-        if (!participationId) {
-            setError('Unable to submit quiz: No participation ID');
-            return;
-        }
 
-        try {
-            // Complete the quiz
-            const response = await axios.post('/api/quiz/complete', {
-                participationId
-            });
-
-            const { results } = response.data;
-
-            // Store results for display
-            if (roomId) {
-                const resultsKey = `quiz_results_${roomId}`;
-                localStorage.setItem(resultsKey, JSON.stringify(results));
-            }
-
-            setState('completed');
-
-            // Clean up session localStorage
-            if (roomId) {
-                const sessionKey = `quiz_session_${roomId}`;
-                localStorage.removeItem(sessionKey);
-            }
-        } catch (error: any) {
-            console.error('Error submitting quiz:', error);
-            setError(error.response?.data?.error || 'Failed to submit quiz');
-        }
-    };
 
     const formatTime = (seconds: number) => {
         const minutes = Math.floor(seconds / 60);
@@ -602,9 +620,11 @@ function QuizPageContent() {
                             {/* Question Image */}
                             {currentQuestion.imageUrl && (
                                 <div className="mt-4">
-                                    <img
+                                    <Image
                                         src={currentQuestion.imageUrl}
                                         alt="Question figure"
+                                        width={800}
+                                        height={600}
                                         className="max-w-full h-auto max-h-96 mx-auto rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm"
                                         onError={(e) => {
                                             console.error('Failed to load question image:', currentQuestion.imageUrl);

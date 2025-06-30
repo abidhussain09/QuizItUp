@@ -9,7 +9,6 @@ interface JWTPayload {
     username?: string;
     email?: string;
     role?: string;
-    // Add any other specific claims you expect in your tokens
 }
 
 export const isTokenValid = (token: string | null): boolean => {

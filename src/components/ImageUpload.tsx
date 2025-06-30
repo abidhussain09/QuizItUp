@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { X, Image as ImageIcon, Loader2, Upload } from 'lucide-react';
+import { X, Loader2, Upload } from 'lucide-react';
 import axios from '@/lib/axios';
 
 interface ImageUploadProps {
@@ -59,9 +60,10 @@ export default function ImageUpload({
             } else {
                 setError(response.data.error || 'Upload failed');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Upload error:', err);
-            setError(err.response?.data?.error || 'Upload failed. Please try again.');
+            const error = err as { response?: { data?: { error?: string } } };
+            setError(error.response?.data?.error || 'Upload failed. Please try again.');
         } finally {
             setUploading(false);
         }
@@ -112,11 +114,13 @@ export default function ImageUpload({
                 // Show uploaded image
                 <div className="relative">
                     <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                        <img 
-                            src={currentImageUrl} 
-                            alt="Question image" 
+                        <Image
+                            src={currentImageUrl}
+                            alt="Question image"
+                            width={800}
+                            height={600}
                             className="max-w-full h-auto max-h-64 mx-auto rounded-lg shadow-sm"
-                            onError={(e) => {
+                            onError={() => {
                                 console.error('Image failed to load:', currentImageUrl);
                                 setError('Failed to load image. Please try uploading again.');
                             }}

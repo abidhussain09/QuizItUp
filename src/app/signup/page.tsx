@@ -57,9 +57,10 @@ export default function SignUpPage() {
                 role,
             });
             router.push('/signin?message=Account created successfully');
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.response?.data?.error || 'Signup failed');
+            const error = err as { response?: { data?: { error?: string } } };
+            setError(error.response?.data?.error || 'Signup failed');
         } finally {
             setLoading(false);
         }

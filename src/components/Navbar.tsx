@@ -15,7 +15,7 @@ interface User{
 };
 export default function Navbar() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [user, setUser] = useState<User |any>(null);
+    const [user, setUser] = useState<User | null>(null);
     const router = useRouter();
     const pathname = usePathname();
 

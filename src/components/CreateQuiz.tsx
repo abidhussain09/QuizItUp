@@ -168,9 +168,10 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
             setRoomId(roomId);
             setInviteCode(inviteCode);
             setState('created');
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error creating quiz or room:', error);
-            setError(error.response?.data?.error || 'Failed to create quiz room');
+            const axiosError = error as { response?: { data?: { error?: string } } };
+            setError(axiosError.response?.data?.error || 'Failed to create quiz room');
             setState('error');
         }
     };
@@ -255,8 +256,9 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
             setQuestions(prev => [...prev, newQuestion]);
             setShowQuestionForm(false);
             resetQuestionForm();
-        } catch (error: any) {
-            setQuestionError(error.response?.data?.error || 'Failed to create question');
+        } catch (error: unknown) {
+            const axiosError = error as { response?: { data?: { error?: string } } };
+            setQuestionError(axiosError.response?.data?.error || 'Failed to create question');
         } finally {
             setQuestionLoading(false);
         }
@@ -446,7 +448,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
                                     <Clock className="h-8 w-8 text-gray-400" />
                                 </div>
                                 <p className="text-gray-500 text-lg">Create a quiz to generate invite code</p>
-                                <p className="text-gray-400 text-sm mt-2">Fill out the form and click "Create Quiz Room"</p>
+                                <p className="text-gray-400 text-sm mt-2">Fill out the form and click &quot;Create Quiz Room&quot;</p>
                             </div>
                         )}
 
@@ -790,7 +792,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
                                     <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
                                         <HelpCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                                         <p className="text-gray-500 dark:text-gray-400 text-lg">No questions added yet</p>
-                                        <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Click "Add Question" to create your first question</p>
+                                        <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Click &quot;Add Question&quot; to create your first question</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-3">

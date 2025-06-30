@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v2 as cloudinary } from 'cloudinary';
 
+// Define Cloudinary upload response interface
+interface CloudinaryUploadResponse {
+    secure_url: string;
+    public_id: string;
+    width: number;
+    height: number;
+    format: string;
+    resource_type: string;
+    bytes: number;
+}
+
 // Configure Cloudinary
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -38,7 +49,7 @@ export async function POST(request: NextRequest) {
         const buffer = Buffer.from(bytes);
 
         // Upload to Cloudinary
-        const uploadResponse = await new Promise((resolve, reject) => {
+        const uploadResponse = await new Promise<CloudinaryUploadResponse>((resolve, reject) => {
             cloudinary.uploader.upload_stream(
                 {
                     resource_type: 'image',
@@ -51,19 +62,18 @@ export async function POST(request: NextRequest) {
                 },
                 (error, result) => {
                     if (error) reject(error);
-                    else resolve(result);
+                    else if (result) resolve(result as CloudinaryUploadResponse);
+                    else reject(new Error('Upload failed: No result returned'));
                 }
             ).end(buffer);
         });
 
-        const result = uploadResponse as any;
-
         return NextResponse.json({
             success: true,
-            imageUrl: result.secure_url,
-            publicId: result.public_id,
-            width: result.width,
-            height: result.height
+            imageUrl: uploadResponse.secure_url,
+            publicId: uploadResponse.public_id,
+            width: uploadResponse.width,
+            height: uploadResponse.height
         });
 
     } catch (error) {

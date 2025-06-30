@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Trophy, Medal, Award, Clock, Target, Users, RefreshCw } from 'lucide-react';
@@ -53,26 +53,27 @@ export default function Leaderboard({ roomId, onClose }: LeaderboardProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const fetchLeaderboard = async () => {
+    const fetchLeaderboard = useCallback(async () => {
         try {
             setLoading(true);
             setError('');
-            
+
             const response = await axios.get(`/api/leaderboard/${roomId}`);
             setData(response.data);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error fetching leaderboard:', error);
-            setError(error.response?.data?.error || 'Failed to load leaderboard');
+            const axiosError = error as { response?: { data?: { error?: string } } };
+            setError(axiosError.response?.data?.error || 'Failed to load leaderboard');
         } finally {
             setLoading(false);
         }
-    };
+    }, [roomId]);
 
     useEffect(() => {
         if (roomId) {
             fetchLeaderboard();
         }
-    }, [roomId]);
+    }, [roomId, fetchLeaderboard]);
 
     const getRankIcon = (rank: number) => {
         switch (rank) {

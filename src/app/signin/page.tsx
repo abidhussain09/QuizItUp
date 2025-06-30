@@ -34,9 +34,10 @@ export default function SignInPage() {
             localStorage.setItem('user', JSON.stringify(res.data.user));
 
             router.push('/dashboard');
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            setError(err.response?.data?.error || 'Sign in failed');
+            const error = err as { response?: { data?: { error?: string } } };
+            setError(error.response?.data?.error || 'Sign in failed');
         } finally {
             setLoading(false);
         }

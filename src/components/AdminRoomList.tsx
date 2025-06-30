@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 // Badge component will be defined inline
@@ -67,7 +67,7 @@ export default function AdminRoomList({ adminId }: AdminRoomListProps) {
     const [copiedCode, setCopiedCode] = useState<string>('');
 
 
-    const fetchRooms = async () => {
+    const fetchRooms = useCallback(async () => {
         try {
             setLoading(true);
             setError('');
@@ -84,20 +84,24 @@ export default function AdminRoomList({ adminId }: AdminRoomListProps) {
             } else {
                 setError('Invalid response format');
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error fetching admin rooms:', error);
-            const errorMessage = error.response?.data?.error || error.message || 'Failed to fetch rooms';
+            const axiosError = error as {
+                response?: { data?: { error?: string } };
+                message?: string;
+            };
+            const errorMessage = axiosError.response?.data?.error || axiosError.message || 'Failed to fetch rooms';
             setError(errorMessage);
         } finally {
             setLoading(false);
         }
-    };
+    }, [adminId]);
 
     useEffect(() => {
         if (adminId) {
             fetchRooms();
         }
-    }, [adminId]); // fetchRooms is stable since it doesn't depend on any state
+    }, [adminId, fetchRooms]);
 
     const copyInviteCode = async (inviteCode: string) => {
         try {

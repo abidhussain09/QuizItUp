@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import axios from 'axios';
@@ -11,7 +11,6 @@ import {
     TrendingUp,
     RefreshCw,
     AlertCircle,
-    Calendar,
     Target,
     Clock,
     Award
@@ -73,26 +72,27 @@ export default function AdminDashboardStats({ adminId }: AdminDashboardStatsProp
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const fetchDashboardStats = async () => {
+    const fetchDashboardStats = useCallback(async () => {
         try {
             setLoading(true);
             setError('');
-            
+
             const response = await axios.get(`/api/admin/dashboard-stats?adminId=${adminId}`);
             setData(response.data);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error fetching admin dashboard stats:', error);
-            setError(error.response?.data?.error || 'Failed to load dashboard statistics');
+            const axiosError = error as { response?: { data?: { error?: string } } };
+            setError(axiosError.response?.data?.error || 'Failed to load dashboard statistics');
         } finally {
             setLoading(false);
         }
-    };
+    }, [adminId]);
 
     useEffect(() => {
         if (adminId) {
             fetchDashboardStats();
         }
-    }, [adminId]);
+    }, [adminId, fetchDashboardStats]);
 
     const formatDate = (dateString: string) => {
         return new Date(dateString).toLocaleDateString('en-US', {

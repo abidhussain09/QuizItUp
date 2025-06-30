@@ -3,7 +3,7 @@
 import { BackgroundBeamsWithCollision } from "@/components/ui/background-beams-with-collision";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Brain, Sparkles, ArrowRight, Trophy, Users, Calendar, Crown, Target, RefreshCw, AlertCircle } from "lucide-react";
+import { Brain, Sparkles, ArrowRight, Trophy, Calendar, Crown, Target, RefreshCw, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { isTokenValid } from "@/lib/auth.client";
@@ -70,7 +70,7 @@ export default function Home() {
 
       const response = await axios.get('/api/leaderboard/global?limit=5');
       setLeaderboardData(response.data);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching global leaderboard:', error);
       setError('Failed to load leaderboard data');
     } finally {
@@ -170,7 +170,7 @@ export default function Home() {
                     <div>
                       <CardTitle className="text-2xl text-gray-800">Recent Quiz Champions</CardTitle>
                       <CardDescription>
-                        See who's been dominating our latest quizzes
+                        See who&apos;s been dominating our latest quizzes
                       </CardDescription>
                     </div>
                   </div>

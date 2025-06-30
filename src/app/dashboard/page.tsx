@@ -16,7 +16,6 @@ import {
     ArrowRight,
     CheckCircle,
     XCircle,
-    Play,
     History,
     Target,
     RefreshCw,
@@ -29,6 +28,16 @@ type User = {
     id: string;
     role: 'ADMIN' | 'PARTICIPANT';
     username?: string;
+};
+
+type AxiosError = {
+    response?: {
+        data?: {
+            error?: string;
+        };
+        status?: number;
+    };
+    message?: string;
 };
 
 
@@ -122,7 +131,7 @@ export default function Dashboard() {
 
             const response = await axios.get(`/api/user/quiz-history/${userId}`);
             setQuizHistoryData(response.data);
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error fetching quiz history:', error);
             setHistoryError('Failed to load quiz history');
         } finally {
@@ -146,9 +155,10 @@ export default function Dashboard() {
 
             // Navigate to quiz page with invite code
             router.push(`/dashboard/quiz?inviteCode=${inviteCode.trim().toUpperCase()}`);
-        } catch (error: any) {
-            const errorMessage = error.response?.data?.error || 'Failed to join room';
-            if (error.response?.status === 404) {
+        } catch (error: unknown) {
+            const axiosError = error as AxiosError;
+            const errorMessage = axiosError.response?.data?.error || 'Failed to join room';
+            if (axiosError.response?.status === 404) {
                 setJoinError(`Invalid invite code "${inviteCode.trim().toUpperCase()}". Please check the code and try again.`);
             } else {
                 setJoinError(errorMessage);
