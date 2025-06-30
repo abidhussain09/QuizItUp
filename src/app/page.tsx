@@ -87,7 +87,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen">
+    <div>
       {/* Hero Section with Background Beams */}
       <BackgroundBeamsWithCollision className="relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 h-full">

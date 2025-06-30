@@ -189,7 +189,7 @@ export default function Dashboard() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-indigo-50 p-6">
+        <div className="bg-gradient-to-br from-gray-50 to-indigo-50 p-6 min-h-full">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="mb-8">
@@ -226,9 +226,6 @@ export default function Dashboard() {
                         <Card className="shadow-lg border-0 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
                             <CardHeader>
                                 <div className="flex items-center space-x-3">
-                                    <div className="p-2 bg-white/20 rounded-lg">
-                                        <Play className="h-6 w-6" />
-                                    </div>
                                     <div>
                                         <CardTitle className="text-2xl text-white">Join a Quiz Room</CardTitle>
                                         <CardDescription className="text-indigo-100">
@@ -253,7 +250,7 @@ export default function Dashboard() {
 
                                     <div className="flex space-x-4">
                                         <div className="flex-1">
-                                            <Label htmlFor="inviteCode" className="text-white font-medium">
+                                            <Label htmlFor="inviteCode" className="text-white font-medium text-2xl">
                                                 Invite Code
                                             </Label>
                                             <Input
