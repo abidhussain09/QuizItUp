@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma'
 import { comparePassword, generateToken } from '@/lib/auth.server'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
     try {
         const { email, password } = await req.json()

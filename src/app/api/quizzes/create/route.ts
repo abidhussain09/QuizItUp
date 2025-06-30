@@ -2,6 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
     try {
         const { title, description, duration, creatorId } = await req.json();

@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
     try {
         const { inviteCode } = await req.json();

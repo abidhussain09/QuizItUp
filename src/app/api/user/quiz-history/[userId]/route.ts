@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
+
 export async function GET(
     _req: NextRequest,
     { params }: { params: Promise<{ userId: string }> }
