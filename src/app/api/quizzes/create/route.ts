@@ -1,47 +1,71 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
+import { NextRequest } from 'next/server'
+import { connectDB } from '@/lib/db'        
+import Quiz from '@/models/Quiz'
+import mongoose from 'mongoose'
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'      
 
 export async function POST(req: NextRequest) {
+    await connectDB()                         
+
     try {
-        const { title, description, duration, creatorId } = await req.json();
+        const {
+            title,
+            description,
+            duration,
+            creatorId,
+        }: {
+            title: string
+            description: string
+            duration?: number
+            creatorId: string
+        } = await req.json()
 
         if (!title || !description || !creatorId) {
-            return new Response(JSON.stringify({ error: 'Missing required fields' }), {
-                status: 400,
-            });
+            return new Response(
+                JSON.stringify({ error: 'Missing required fields' }),
+                { status: 400 },
+            )
         }
 
-        // Validate duration
+        // Validate creatorId format
+        if (!mongoose.Types.ObjectId.isValid(creatorId)) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid creatorId' }),
+                { status: 400 },
+            )
+        }
+
+        // Validate duration if provided
         if (duration !== undefined) {
             if (typeof duration !== 'number' || duration < 5 || duration > 180) {
-                return new Response(JSON.stringify({ error: 'Duration must be between 5 and 180 minutes' }), {
-                    status: 400,
-                });
+                return new Response(
+                    JSON.stringify({ error: 'Duration must be between 5 and 180 minutes' }),
+                    { status: 400 },
+                )
             }
         }
 
-        const quiz = await prisma.quiz.create({
-            data: {
-                id: uuidv4(),
-                title,
-                description,
-                duration: duration || 30, // Default to 30 minutes if not provided
-                creatorId,
-            },
-        });
 
-        return new Response(JSON.stringify({
-            quizId: quiz.id,
-            duration: quiz.duration
-        }), { status: 201 });
-    } catch (error) {
-        console.error('Error creating quiz:', error);
-        return new Response(JSON.stringify({ error: 'Failed to create quiz' }), {
-            status: 500,
-        });
+        const quizDoc = await Quiz.create({
+            title,
+            description,
+            duration: duration ?? 30,      // default 30 min
+            creatorId,
+        })
+
+        return new Response(
+            JSON.stringify({
+                quizId: quizDoc._id.toString(),
+                duration: quizDoc.duration,
+            }),
+            { status: 201 },
+        )
+    } catch (err) {
+        console.error('Error creating quiz:', err)
+        return new Response(
+            JSON.stringify({ error: 'Failed to create quiz' }),
+            { status: 500 },
+        )
     }
 }

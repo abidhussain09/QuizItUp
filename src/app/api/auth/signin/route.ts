@@ -1,39 +1,59 @@
-import { prisma } from '@/lib/prisma'
-import { comparePassword, generateToken } from '@/lib/auth.server'
+import { connectDB } from '@/lib/db';
+import User from '@/models/User';
+import { comparePassword, generateToken } from '@/lib/auth.server';
 
-// Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
     try {
-        const { email, password } = await req.json()
+        await connectDB();
+
+        const { email, password } = await req.json();
 
         if (!email || !password) {
-            return new Response(JSON.stringify({ error: 'Email and password required' }), { status: 400 })
+            return new Response(
+                JSON.stringify({ error: 'Email and password are required' }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
-        const user = await prisma.user.findUnique({ where: { email } })
+        const user = await User.findOne({ email });
 
-        if (!user || !(await comparePassword(password, user.password))) {
-            return new Response(JSON.stringify({ error: 'Invalid credentials' }), { status: 401 })
+        if (!user) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid credentials' }),
+                { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
-        const token = generateToken(user.id)
+        const isMatch = await comparePassword(password, user.password);
+
+        if (!isMatch) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid credentials' }),
+                { status: 401, headers: { 'Content-Type': 'application/json' } }
+            );
+        }
+
+        const token = generateToken(user._id.toString());
 
         return new Response(
             JSON.stringify({
                 token,
                 user: {
-                    id: user.id,
+                    id: user._id,
                     username: user.username,
                     email: user.email,
                     role: user.role,
                 },
             }),
-            { status: 200 }
-        )
-    } catch (err) {
-        console.error('Signin Error:', err)
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+    } catch (error) {
+        console.error('Signin Error:', error);
+        return new Response(
+            JSON.stringify({ error: 'Internal Server Error' }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
     }
 }

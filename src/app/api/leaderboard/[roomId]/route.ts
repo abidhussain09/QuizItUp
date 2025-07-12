@@ -1,132 +1,148 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server'
+import { connectDB } from '@/lib/db'
+import mongoose from 'mongoose'
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+import QuizRoom from '@/models/QuizRoom'
+import Question from '@/models/Question'
+import Participation from '@/models/Participation'
+import ParticipantAnswer from '@/models/ParticipantAnswer'
+
+export const dynamic = 'force-dynamic'   // always server‑side
 
 export async function GET(
     _req: NextRequest,
-    { params }: { params: Promise<{ roomId: string }> }
+    { params }: { params: { roomId: string } },
 ) {
-    try {
-        const { roomId } = await params;
+    await connectDB()
 
+    try {
+        const { roomId } = params
+
+        /* ────────── validation ────────── */
         if (!roomId) {
-            return new Response(JSON.stringify({ error: 'Room ID is required' }), {
-                status: 400,
-            });
+            return new Response(
+                JSON.stringify({ error: 'Room ID is required' }),
+                { status: 400 },
+            )
+        }
+        if (!mongoose.Types.ObjectId.isValid(roomId)) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid Room ID format' }),
+                { status: 400 },
+            )
         }
 
-        // Verify room exists
-        const room = await prisma.quizRoom.findUnique({
-            where: { id: roomId },
-            include: {
-                quiz: {
-                    select: {
-                        title: true,
-                        description: true,
-                        duration: true,
-                        questions: {
-                            select: {
-                                marks: true
-                            }
-                        }
-                    }
-                }
-            }
-        });
+        /* ────────── fetch room + quiz doc ────────── */
+        const room = await QuizRoom.findById(roomId)
+            .populate({ path: 'quizId', model: 'Quiz' }) // hydrated quizDoc
+            .exec()
 
         if (!room) {
-            return new Response(JSON.stringify({ error: 'Room not found' }), {
-                status: 404,
-            });
+            return new Response(
+                JSON.stringify({ error: 'Room not found' }),
+                { status: 404 },
+            )
         }
 
-        // Get all completed participations for this room, ordered by score (descending)
-        const participations = await prisma.participation.findMany({
-            where: { 
-                quizRoomId: roomId,
-                completed: true
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
-                },
-                participantAnswers: {
-                    select: {
-                        isCorrect: true,
-                        marks: true
-                    }
-                }
-            },
-            orderBy: [
-                { score: 'desc' },
-                { finishedAt: 'asc' } // Earlier completion time as tiebreaker
-            ]
-        });
+        const quizDoc = room.quizId as any
 
-        // Calculate additional statistics for each participant
-        const leaderboard = participations.map((participation, index) => {
-            const correctAnswers = participation.participantAnswers.filter(answer => answer.isCorrect).length;
-            const totalQuestions = room.quiz.questions.length;
-            const answeredQuestions = participation.participantAnswers.length;
-            const accuracy = answeredQuestions > 0 ? Math.round((correctAnswers / answeredQuestions) * 100) : 0;
-            
-            // Calculate completion time in minutes
-            const completionTime = participation.finishedAt && participation.joinedAt 
-                ? Math.round((participation.finishedAt.getTime() - participation.joinedAt.getTime()) / (1000 * 60))
-                : null;
+        /* ────────── fetch all questions for marks total ────────── */
+        const questions = await Question.find({ quizId: quizDoc._id })
+            .select('marks')
+            .exec()
+        const totalPossibleMarks = questions.reduce((sum, q) => sum + q.marks, 0)
+
+        /* ────────── completed participations ordered by score desc + finishedAt asc ────────── */
+        const participations = await Participation.find({
+            quizRoomId: roomId,
+            completed: true,
+        })
+            .sort({ score: -1, finishedAt: 1 })
+            .populate({ path: 'userId', select: 'username' })
+            .exec()
+
+        const participationIds = participations.map(p => p._id)
+
+        /* ────────── fetch answers in one query & group by participation ────────── */
+        const answers = await ParticipantAnswer.find({
+            participationId: { $in: participationIds },
+        }).exec()
+
+        const answersByPart: Record<string, typeof answers> = {}
+        answers.forEach(a => {
+            const k = (a.participationId as mongoose.Types.ObjectId).toString()
+            if (!answersByPart[k]) answersByPart[k] = []
+            answersByPart[k].push(a)
+        })
+
+        /* ────────── build leaderboard array ────────── */
+        const leaderboard = participations.map((p, idx) => {
+            const partIdStr = p._id.toString()
+            const partAnswers = answersByPart[partIdStr] || []
+            const correctCount = partAnswers.filter(a => a.isCorrect).length
+            const answeredCount = partAnswers.length
+            const totalQuestions = questions.length
+            const accuracy =
+                answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0
+
+            const completionTime =
+                p.finishedAt && p.joinedAt
+                    ? Math.round(
+                        (p.finishedAt.getTime() - p.joinedAt.getTime()) / (1000 * 60),
+                    )
+                    : null
 
             return {
-                rank: index + 1,
+                rank: idx + 1,
                 participant: {
-                    id: participation.user.id,
-                    username: participation.user.username
+                    id: (p.userId as any)._id.toString(),
+                    username: (p.userId as any).username,
                 },
-                score: participation.score,
-                correctAnswers: correctAnswers,
-                totalQuestions: totalQuestions,
-                answeredQuestions: answeredQuestions,
-                accuracy: accuracy,
-                completionTime: completionTime,
-                finishedAt: participation.finishedAt,
-                joinedAt: participation.joinedAt
-            };
-        });
+                score: p.score,
+                correctAnswers: correctCount,
+                totalQuestions,
+                answeredQuestions: answeredCount,
+                accuracy,
+                completionTime,
+                finishedAt: p.finishedAt,
+                joinedAt: p.joinedAt,
+            }
+        })
 
-        // Calculate quiz statistics
-        const totalPossibleMarks = room.quiz.questions.reduce((sum, question) => sum + question.marks, 0);
-        const averageScore = participations.length > 0 
-            ? Math.round(participations.reduce((sum, p) => sum + p.score, 0) / participations.length)
-            : 0;
-        
-        const highestScore = participations.length > 0 ? participations[0].score : 0;
+        /* ────────── quiz‑level statistics ────────── */
+        const averageScore =
+            participations.length > 0
+                ? Math.round(
+                    participations.reduce((sum, p) => sum + p.score, 0) /
+                    participations.length,
+                )
+                : 0
+        const highestScore = participations.length > 0 ? participations[0].score : 0
 
-        return new Response(JSON.stringify({
-            quiz: {
-                title: room.quiz.title,
-                description: room.quiz.description,
-                duration: room.quiz.duration,
-                totalQuestions: room.quiz.questions.length,
-                totalPossibleMarks: totalPossibleMarks
-            },
-            statistics: {
-                totalParticipants: participations.length,
-                averageScore: averageScore,
-                highestScore: highestScore
-            },
-            leaderboard: leaderboard
-        }), {
-            status: 200,
-        });
-
-    } catch (error) {
-        console.error('Error fetching leaderboard:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch leaderboard' }), {
-            status: 500,
-        });
+        /* ────────── respond ────────── */
+        return new Response(
+            JSON.stringify({
+                quiz: {
+                    title: quizDoc.title,
+                    description: quizDoc.description,
+                    duration: quizDoc.duration,
+                    totalQuestions: questions.length,
+                    totalPossibleMarks,
+                },
+                statistics: {
+                    totalParticipants: participations.length,
+                    averageScore,
+                    highestScore,
+                },
+                leaderboard,
+            }),
+            { status: 200 },
+        )
+    } catch (err) {
+        console.error('Error fetching leaderboard:', err)
+        return new Response(
+            JSON.stringify({ error: 'Failed to fetch leaderboard' }),
+            { status: 500 },
+        )
     }
 }

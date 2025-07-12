@@ -1,136 +1,147 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server'
+import { connectDB } from '@/lib/db'
+import mongoose from 'mongoose'
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+import Participation from '@/models/Participation'
+import Question from '@/models/Question'
+import ParticipantAnswer from '@/models/ParticipantAnswer'
+import QuizRoom from '@/models/QuizRoom'
+
+export const dynamic = 'force-dynamic'   
 
 export async function POST(req: NextRequest) {
+    await connectDB()                      
+
     try {
-        const { participationId, questionId, selectedOption } = await req.json();
+        const {
+            participationId,
+            questionId,
+            selectedOption,
+        }: {
+            participationId: string
+            questionId: string
+            selectedOption: string
+        } = await req.json()
 
-        // Validate required fields
+        
         if (!participationId || !questionId || !selectedOption) {
-            return new Response(JSON.stringify({
-                error: 'Missing required fields: participationId, questionId, selectedOption'
-            }), {
-                status: 400,
-            });
+            return new Response(
+                JSON.stringify({
+                    error: 'Missing required fields: participationId, questionId, selectedOption',
+                }),
+                { status: 400 },
+            )
         }
 
-        // Validate selectedOption format
         if (!['A', 'B', 'C', 'D'].includes(selectedOption)) {
-            return new Response(JSON.stringify({
-                error: 'Invalid selectedOption. Must be A, B, C, or D'
-            }), {
-                status: 400,
-            });
+            return new Response(
+                JSON.stringify({
+                    error: 'Invalid selectedOption. Must be A, B, C, or D',
+                }),
+                { status: 400 },
+            )
         }
 
-        // Check if participation exists and is not completed
-        const participation = await prisma.participation.findUnique({
-            where: { id: participationId },
-            include: {
-                quizRoom: {
-                    include: {
-                        quiz: true
-                    }
-                }
-            }
-        });
+        if (
+            !mongoose.Types.ObjectId.isValid(participationId) ||
+            !mongoose.Types.ObjectId.isValid(questionId)
+        ) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid participationId or questionId' }),
+                { status: 400 },
+            )
+        }
+
+        
+        const participation = await Participation.findById(participationId)
+            .populate({
+                path: 'quizRoomId',
+                populate: { path: 'quizId', model: 'Quiz' },
+            })
+            .exec()
 
         if (!participation) {
             return new Response(JSON.stringify({ error: 'Participation not found' }), {
                 status: 404,
-            });
+            })
         }
 
         if (participation.completed) {
             return new Response(JSON.stringify({ error: 'Quiz already completed' }), {
                 status: 400,
-            });
+            })
         }
 
-        // Get question details
-        const question = await prisma.question.findUnique({
-            where: { id: questionId },
-        });
-
+        
+        const question = await Question.findById(questionId).exec()
         if (!question) {
             return new Response(JSON.stringify({ error: 'Question not found' }), {
                 status: 404,
-            });
+            })
         }
 
-        // Verify question belongs to the quiz
-        if (question.quizId !== participation.quizRoom.quizId) {
-            return new Response(JSON.stringify({ error: 'Question does not belong to this quiz' }), {
-                status: 400,
-            });
+        
+        const quizIdOfRoom = (participation.quizRoomId as any).quizId.toString()
+        if (question.quizId.toString() !== quizIdOfRoom) {
+            return new Response(
+                JSON.stringify({ error: 'Question does not belong to this quiz' }),
+                { status: 400 },
+            )
         }
 
-        // Check if answer already exists
-        const existingAnswer = await prisma.participantAnswer.findUnique({
-            where: {
-                participationId_questionId: {
-                    participationId,
-                    questionId
-                }
-            }
-        });
+        
+        const existing = await ParticipantAnswer.findOne({
+            participationId,
+            questionId,
+        }).exec()
 
-        if (existingAnswer) {
-            return new Response(JSON.stringify({
-                error: 'Answer already submitted for this question',
-                currentAnswer: existingAnswer
-            }), {
-                status: 400,
-            });
+        if (existing) {
+            return new Response(
+                JSON.stringify({
+                    error: 'Answer already submitted for this question',
+                    currentAnswer: existing,
+                }),
+                { status: 400 },
+            )
         }
 
-        // Calculate if answer is correct
-        const isCorrect = question.correctOption === selectedOption;
-        const marksEarned = isCorrect ? question.marks : 0;
+        /* ───────────── create answer ───────────── */
+        const isCorrect = question.correctOption === selectedOption
+        const marksEarned = isCorrect ? question.marks : 0
 
-        // Create participant answer
-        const participantAnswer = await prisma.participantAnswer.create({
-            data: {
-                participationId,
-                questionId,
-                selectedOption,
+        const participantAnswer = await ParticipantAnswer.create({
+            participationId,
+            questionId,
+            selectedOption,
+            isCorrect,
+            marks: marksEarned,
+            answeredAt: new Date(),
+        })
+
+        /* ───────────── recalculate total score ───────────── */
+        const allAnswers = await ParticipantAnswer.find({ participationId }).exec()
+        const totalScore = allAnswers.reduce((sum, a) => sum + a.marks, 0)
+
+        /* ───────────── update participation.score ───────────── */
+        await Participation.findByIdAndUpdate(participationId, { score: totalScore })
+
+        /* ───────────── respond ───────────── */
+        return new Response(
+            JSON.stringify({
+                success: true,
+                answer: participantAnswer,
+                totalScore,
                 isCorrect,
-                marks: marksEarned,
-                answeredAt: new Date(),
-            },
-        });
-
-        // Calculate new total score
-        const allAnswers = await prisma.participantAnswer.findMany({
-            where: { participationId },
-        });
-
-        const totalScore = allAnswers.reduce((sum, answer) => sum + answer.marks, 0);
-
-        // Update participation score
-        await prisma.participation.update({
-            where: { id: participationId },
-            data: { score: totalScore },
-        });
-
-        return new Response(JSON.stringify({
-            success: true,
-            answer: participantAnswer,
-            totalScore: totalScore,
-            isCorrect: isCorrect,
-            marksEarned: marksEarned,
-            answeredQuestions: allAnswers.length
-        }), {
-            status: 200,
-        });
-
-    } catch (error) {
-        console.error('Error submitting answer:', error);
-        return new Response(JSON.stringify({ error: 'Failed to submit answer' }), {
-            status: 500,
-        });
+                marksEarned,
+                answeredQuestions: allAnswers.length,
+            }),
+            { status: 200 },
+        )
+    } catch (err) {
+        console.error('Error submitting answer:', err)
+        return new Response(
+            JSON.stringify({ error: 'Failed to submit answer' }),
+            { status: 500 },
+        )
     }
 }

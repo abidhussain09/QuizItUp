@@ -1,73 +1,90 @@
-import { prisma } from '@/lib/prisma';
-import { v4 as uuidv4 } from 'uuid';
-import { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server'
+import { connectDB } from '@/lib/db';
+import QuizRoom from '@/models/QuizRoom'
+import Quiz from '@/models/Quiz'                    
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+    await connectDB()                        
+
     try {
-        const { quizId, startTime, endTime } = await req.json();
+        const { quizId, startTime, endTime } = await req.json()
 
-        // Validate required fields
         if (!quizId) {
-            return new Response(JSON.stringify({ error: 'Quiz ID is required' }), {
-                status: 400,
-            });
+            return new Response(
+                JSON.stringify({ error: 'Quiz ID is required' }),
+                { status: 400 },
+            )
         }
 
-        // Validate datetime fields if provided
+        const quizExists = await Quiz.exists({ _id: quizId })
+        if (!quizExists) {
+            return new Response(
+                JSON.stringify({ error: 'Quiz not found' }),
+                { status: 404 },
+            )
+        }
+
+        // Date validation (if both provided)
         if (startTime && endTime) {
-            const startDate = new Date(startTime);
-            const endDate = new Date(endTime);
+            const startDate = new Date(startTime)
+            const endDate = new Date(endTime)
 
-            // Check if dates are valid
             if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-                return new Response(JSON.stringify({ error: 'Invalid datetime format' }), {
-                    status: 400,
-                });
+                return new Response(
+                    JSON.stringify({ error: 'Invalid datetime format' }),
+                    { status: 400 },
+                )
             }
-
-            // Check if end time is after start time
             if (endDate <= startDate) {
-                return new Response(JSON.stringify({ error: 'End time must be after start time' }), {
-                    status: 400,
-                });
+                return new Response(
+                    JSON.stringify({ error: 'End time must be after start time' }),
+                    { status: 400 },
+                )
             }
-
-            // Check if start time is not in the past
-            const now = new Date();
-            if (startDate < now) {
-                return new Response(JSON.stringify({ error: 'Start time cannot be in the past' }), {
-                    status: 400,
-                });
+            if (startDate < new Date()) {
+                return new Response(
+                    JSON.stringify({ error: 'Start time cannot be in the past' }),
+                    { status: 400 },
+                )
             }
         }
 
-        const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+        let inviteCode: string
+        do {
+            inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase() // e.g. "A1B2C3"
+        } while (await QuizRoom.exists({ inviteCode }))
 
-        const newRoom = await prisma.quizRoom.create({
-            data: {
-                id: uuidv4(),
-                quizId,
-                inviteCode,
-                startTime: startTime ? new Date(startTime) : null,
-                endTime: endTime ? new Date(endTime) : null,
-            },
-        });
-
-        return new Response(JSON.stringify({
-            roomId: newRoom.id,
+        const newRoom = await QuizRoom.create({
+            quizId,
             inviteCode,
-            startTime: newRoom.startTime,
-            endTime: newRoom.endTime
-        }), {
-            status: 201,
-        });
-    } catch (error) {
-        console.error('Error creating room:', error);
-        return new Response(JSON.stringify({ error: 'Room creation failed' }), {
-            status: 500,
-        });
+            startTime: startTime ? new Date(startTime) : undefined,
+            endTime: endTime ? new Date(endTime) : undefined,
+        })
+
+        return new Response(
+            JSON.stringify({
+                roomId: newRoom._id,          
+                inviteCode,
+                startTime: newRoom.startTime,
+                endTime: newRoom.endTime,
+            }),
+            { status: 201 },
+        )
+    } catch (err: any) {
+        // Handle duplicate key errors (just in case)
+        if (err.code === 11000) {            
+            return new Response(
+                JSON.stringify({ error: 'Invite code already exists, please retry' }),
+                { status: 409 },
+            )
+        }
+
+        console.error('Error creating room:', err)
+        return new Response(
+            JSON.stringify({ error: 'Room creation failed' }),
+            { status: 500 },
+        )
     }
 }

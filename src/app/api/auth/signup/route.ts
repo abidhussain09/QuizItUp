@@ -1,45 +1,64 @@
-import { prisma } from '@/lib/prisma'
-import { hashPassword } from '@/lib/auth.server'
-import { Role } from '@prisma/client'
+import { connectDB } from '@/lib/db';
+import User from '@/models/User';
+import { hashPassword } from '@/lib/auth.server';
 
-// Force dynamic rendering for this route
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
     try {
-        const { username, email, password, role } = await req.json()
+        await connectDB();
+
+        const { username, email, password, role } = await req.json();
 
         if (!username || !email || !password || !role) {
-            return new Response(JSON.stringify({ error: 'All fields are required' }), { status: 400 })
+            return new Response(
+                JSON.stringify({ error: 'All fields are required' }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
-        // Optional: Validate role against the enum
-        if (!Object.values(Role).includes(role)) {
-            return new Response(JSON.stringify({ error: 'Invalid role' }), { status: 400 })
+        const allowedRoles = ['ADMIN', 'PARTICIPANT'];
+        if (!allowedRoles.includes(role)) {
+            return new Response(
+                JSON.stringify({ error: 'Invalid role' }),
+                { status: 400, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
-        const existingUser = await prisma.user.findFirst({
-            where: {
-                OR: [{ email }, { username }],
-            },
-        })
+        const existingUser = await User.findOne({
+            $or: [{ email }, { username }],
+        });
 
         if (existingUser) {
-            return new Response(JSON.stringify({ error: 'User already exists' }), { status: 409 })
+            return new Response(
+                JSON.stringify({ error: 'User already exists' }),
+                { status: 409, headers: { 'Content-Type': 'application/json' } }
+            );
         }
 
-        const hashed = await hashPassword(password)
+        const hashed = await hashPassword(password);
 
-        const user = await prisma.user.create({
-            data: { username, email, password: hashed, role },
-        })
+        // 📝 Create user
+        const newUser = await User.create({
+            username,
+            email,
+            password: hashed,
+            role,
+        });
 
         return new Response(
-            JSON.stringify({ id: user.id, email: user.email, role: user.role }),
-            { status: 201 }
-        )
+            JSON.stringify({
+                id: newUser._id,
+                email: newUser.email,
+                role: newUser.role,
+            }),
+            { status: 201, headers: { 'Content-Type': 'application/json' } }
+        );
     } catch (err) {
-        console.error('Signup Error:', err)
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 })
+        console.error('Signup Error:', err);
+        return new Response(
+            JSON.stringify({ error: 'Internal Server Error' }),
+            { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
     }
 }

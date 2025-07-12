@@ -1,203 +1,156 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
+// app/api/admin/dashboard/route.ts
+import { NextRequest } from 'next/server'
+import { connectDB } from '@/lib/db'
+import mongoose, { Types } from 'mongoose'
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+import User from '@/models/User'
+import Quiz from '@/models/Quiz'
+import QuizRoom from '@/models/QuizRoom'
+import Participation from '@/models/Participation'
+import ParticipantAnswer from '@/models/ParticipantAnswer'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+    await connectDB()
+
     try {
-        const { searchParams } = new URL(req.url);
-        const adminId = searchParams.get('adminId');
+        /* ────────── query‑param validation ────────── */
+        const { searchParams } = new URL(req.url)
+        const adminId = searchParams.get('adminId')
 
         if (!adminId) {
             return new Response(JSON.stringify({ error: 'Admin ID is required' }), {
                 status: 400,
-            });
+            })
+        }
+        if (!Types.ObjectId.isValid(adminId)) {
+            return new Response(JSON.stringify({ error: 'Invalid Admin ID' }), {
+                status: 400,
+            })
         }
 
-        // Verify admin user exists
-        const admin = await prisma.user.findUnique({
-            where: { id: adminId },
-            select: {
-                id: true,
-                username: true,
-                role: true
-            }
-        });
-
+        /* ────────── verify admin user & role ────────── */
+        const admin = await User.findById(adminId).select('role username')
         if (!admin || admin.role !== 'ADMIN') {
             return new Response(JSON.stringify({ error: 'Admin access required' }), {
                 status: 403,
-            });
+            })
         }
 
-        // Get comprehensive quiz statistics
-        const totalQuizzes = await prisma.quiz.count({
-            where: { creatorId: adminId }
-        });
+        const adminObjId = new Types.ObjectId(adminId)
 
-        const totalRooms = await prisma.quizRoom.count({
-            where: {
-                quiz: {
-                    creatorId: adminId
-                }
-            }
-        });
+        /* ────────── fetch quiz & room IDs created by this admin ────────── */
+        const quizzes = await Quiz.find({ creatorId: adminObjId }).select('_id').exec()
+        const quizIds = quizzes.map(q => q._id)
+        const rooms = await QuizRoom.find({ quizId: { $in: quizIds } }).select('_id').exec()
+        const roomIds = rooms.map(r => r._id)
 
-        const totalParticipations = await prisma.participation.count({
-            where: {
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            }
-        });
+        /* ────────── basic counts ────────── */
+        const [
+            totalQuizzes,
+            totalRooms,
+            totalParticipations,
+            completedParticipations,
+            avgScoreAgg,
+        ] = await Promise.all([
+            quizzes.length,
+            rooms.length,
+            Participation.countDocuments({ quizRoomId: { $in: roomIds } }),
+            Participation.countDocuments({ completed: true, quizRoomId: { $in: roomIds } }),
+            Participation.aggregate([
+                { $match: { completed: true, quizRoomId: { $in: roomIds } } },
+                { $group: { _id: null, avgScore: { $avg: '$score' } } },
+            ]),
+        ])
 
-        const completedParticipations = await prisma.participation.count({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            }
-        });
+        const averageScore =
+            avgScoreAgg.length > 0 ? Math.round(avgScoreAgg[0].avgScore) : 0
+        const completionRate =
+            totalParticipations > 0
+                ? Math.round((completedParticipations / totalParticipations) * 100)
+                : 0
 
-        // Get average score for admin's quizzes
-        const avgScoreResult = await prisma.participation.aggregate({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            _avg: {
-                score: true
-            }
-        });
+        /* ────────── top performers (limit 10) ────────── */
+        const topParts = await Participation.find({
+            completed: true,
+            quizRoomId: { $in: roomIds },
+        })
+            .sort({ score: -1, finishedAt: 1 })
+            .limit(10)
+            .populate({ path: 'userId', select: 'username' })
+            .populate({
+                path: 'quizRoomId',
+                populate: { path: 'quizId', select: 'title' },
+            })
+            .exec()
 
-        // Get top performers across admin's quizzes
-        const topPerformers = await prisma.participation.findMany({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
-                },
-                quizRoom: {
-                    include: {
-                        quiz: {
-                            select: {
-                                id: true,
-                                title: true
-                            }
-                        }
-                    }
-                },
-                participantAnswers: {
-                    select: {
-                        isCorrect: true,
-                        marks: true
-                    }
-                }
-            },
-            orderBy: [
-                { score: 'desc' },
-                { finishedAt: 'asc' }
-            ],
-            take: 10
-        });
+        /* gather answers for accuracy calc */
+        const topPartIds = topParts.map(p => p._id)
+        const topAnswers = await ParticipantAnswer.find({
+            participationId: { $in: topPartIds },
+        }).exec()
 
-        // Get recent quiz activity
-        const recentActivity = await prisma.participation.findMany({
-            where: {
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
-                },
-                quizRoom: {
-                    include: {
-                        quiz: {
-                            select: {
-                                id: true,
-                                title: true
-                            }
-                        }
-                    }
-                }
-            },
-            orderBy: [
-                { joinedAt: 'desc' }
-            ],
-            take: 20
-        });
+        const ansByPart: Record<string, typeof topAnswers> = {}
+        topAnswers.forEach(a => {
+            const k = (a.participationId as Types.ObjectId).toString()
+            if (!ansByPart[k]) ansByPart[k] = []
+            ansByPart[k].push(a)
+        })
 
-        // Calculate completion rate
-        const completionRate = totalParticipations > 0 
-            ? Math.round((completedParticipations / totalParticipations) * 100)
-            : 0;
-
-        // Format top performers data
-        const formattedTopPerformers = topPerformers.map((participation, index) => {
-            const correctAnswers = participation.participantAnswers.filter(answer => answer.isCorrect).length;
-            const totalQuestions = participation.participantAnswers.length;
-            const accuracy = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+        const formattedTopPerformers = topParts.map((p, idx) => {
+            const answers = ansByPart[p._id.toString()] ?? []
+            const correct = answers.filter(a => a.isCorrect).length
+            const acc =
+                answers.length > 0 ? Math.round((correct / answers.length) * 100) : 0
+            const quizDoc = (p.quizRoomId as any).quizId
 
             return {
-                rank: index + 1,
+                rank: idx + 1,
                 participant: {
-                    id: participation.user.id,
-                    username: participation.user.username
+                    id: (p.userId as any)._id.toString(),
+                    username: (p.userId as any).username,
                 },
                 quiz: {
-                    id: participation.quizRoom.quiz.id,
-                    title: participation.quizRoom.quiz.title
+                    id: quizDoc._id.toString(),
+                    title: quizDoc.title,
                 },
-                score: participation.score,
-                accuracy: accuracy,
-                finishedAt: participation.finishedAt
-            };
-        });
+                score: p.score,
+                accuracy: acc,
+                finishedAt: p.finishedAt,
+            }
+        })
 
-        // Format recent activity
-        const formattedRecentActivity = recentActivity.map((participation) => ({
-            id: participation.id,
+        /* ────────── recent activity (last 20 joins) ────────── */
+        const recent = await Participation.find({
+            quizRoomId: { $in: roomIds },
+        })
+            .sort({ joinedAt: -1 })
+            .limit(20)
+            .populate({ path: 'userId', select: 'username' })
+            .populate({
+                path: 'quizRoomId',
+                populate: { path: 'quizId', select: 'title' },
+            })
+            .exec()
+
+        const formattedRecentActivity = recent.map(p => ({
+            id: p._id.toString(),
             participant: {
-                id: participation.user.id,
-                username: participation.user.username
+                id: (p.userId as any)._id.toString(),
+                username: (p.userId as any).username,
             },
             quiz: {
-                id: participation.quizRoom.quiz.id,
-                title: participation.quizRoom.quiz.title
+                id: (p.quizRoomId as any).quizId._id.toString(),
+                title: (p.quizRoomId as any).quizId.title,
             },
-            completed: participation.completed,
-            score: participation.score,
-            joinedAt: participation.joinedAt,
-            finishedAt: participation.finishedAt
-        }));
+            completed: p.completed,
+            score: p.score,
+            joinedAt: p.joinedAt,
+            finishedAt: p.finishedAt,
+        }))
 
+        /* ────────── assemble dashboard stats ────────── */
         const dashboardStats = {
             overview: {
                 totalQuizzes,
@@ -205,20 +158,18 @@ export async function GET(req: NextRequest) {
                 totalParticipations,
                 completedParticipations,
                 completionRate,
-                averageScore: Math.round(avgScoreResult._avg.score || 0)
+                averageScore,
             },
             topPerformers: formattedTopPerformers,
-            recentActivity: formattedRecentActivity
-        };
+            recentActivity: formattedRecentActivity,
+        }
 
-        return new Response(JSON.stringify(dashboardStats), {
-            status: 200,
-        });
-
-    } catch (error) {
-        console.error('Error fetching admin dashboard stats:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch dashboard statistics' }), {
-            status: 500,
-        });
+        return new Response(JSON.stringify(dashboardStats), { status: 200 })
+    } catch (err) {
+        console.error('Error fetching admin dashboard stats:', err)
+        return new Response(
+            JSON.stringify({ error: 'Failed to fetch dashboard statistics' }),
+            { status: 500 },
+        )
     }
 }
