@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
             )
         }
 
+
         if (!['A', 'B', 'C', 'D'].includes(selectedOption)) {
             return new Response(
                 JSON.stringify({
@@ -81,13 +82,13 @@ export async function POST(req: NextRequest) {
         }
 
         
-        const quizIdOfRoom = (participation.quizRoomId as any).quizId.toString()
-        if (question.quizId.toString() !== quizIdOfRoom) {
-            return new Response(
-                JSON.stringify({ error: 'Question does not belong to this quiz' }),
-                { status: 400 },
-            )
-        }
+        // const quizIdOfRoom = (participation.quizRoomId as any).quizId.toString()
+        // if (question.quizId.toString() !== quizIdOfRoom) {
+        //     return new Response(
+        //         JSON.stringify({ error: 'Question does not belong to this quiz' }),
+        //         { status: 400 },
+        //     )
+        // }
 
         
         const existing = await ParticipantAnswer.findOne({

@@ -533,23 +533,23 @@ function QuizPageContent() {
                                 </div>
                                 <div className="flex items-center space-x-4">
                                     <div className={`px-3 py-2 rounded-lg ${timeRemaining <= 300 // 5 minutes warning
-                                            ? 'bg-red-100 dark:bg-red-900'
-                                            : timeRemaining <= 600 // 10 minutes warning
-                                                ? 'bg-yellow-100 dark:bg-yellow-900'
-                                                : 'bg-blue-100 dark:bg-blue-900'
+                                        ? 'bg-red-100 dark:bg-red-900'
+                                        : timeRemaining <= 600 // 10 minutes warning
+                                            ? 'bg-yellow-100 dark:bg-yellow-900'
+                                            : 'bg-blue-100 dark:bg-blue-900'
                                         }`}>
                                         <div className="flex items-center space-x-2">
                                             <Clock className={`h-4 w-4 ${timeRemaining <= 300
-                                                    ? 'text-red-600 dark:text-red-400'
-                                                    : timeRemaining <= 600
-                                                        ? 'text-yellow-600 dark:text-yellow-400'
-                                                        : 'text-blue-600 dark:text-blue-400'
+                                                ? 'text-red-600 dark:text-red-400'
+                                                : timeRemaining <= 600
+                                                    ? 'text-yellow-600 dark:text-yellow-400'
+                                                    : 'text-blue-600 dark:text-blue-400'
                                                 }`} />
                                             <span className={`font-mono font-medium ${timeRemaining <= 300
-                                                    ? 'text-red-600 dark:text-red-400'
-                                                    : timeRemaining <= 600
-                                                        ? 'text-yellow-600 dark:text-yellow-400'
-                                                        : 'text-blue-600 dark:text-blue-400'
+                                                ? 'text-red-600 dark:text-red-400'
+                                                : timeRemaining <= 600
+                                                    ? 'text-yellow-600 dark:text-yellow-400'
+                                                    : 'text-blue-600 dark:text-blue-400'
                                                 }`}>
                                                 {formatTime(timeRemaining)}
                                             </span>
@@ -654,13 +654,13 @@ function QuizPageContent() {
                                         <Label
                                             htmlFor={`option-${option.key}`}
                                             className={`flex items-center p-4 rounded-lg border-2 cursor-pointer transition-all ${currentAnswer?.selectedOption === option.key
-                                                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-100'
-                                                    : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 bg-white dark:bg-gray-700'
+                                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-100'
+                                                : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 bg-white dark:bg-gray-700'
                                                 }`}
                                         >
                                             <div className={`w-6 h-6 rounded-full border-2 mr-4 flex items-center justify-center ${currentAnswer?.selectedOption === option.key
-                                                    ? 'border-indigo-500 bg-indigo-500'
-                                                    : 'border-gray-300 dark:border-gray-500'
+                                                ? 'border-indigo-500 bg-indigo-500'
+                                                : 'border-gray-300 dark:border-gray-500'
                                                 }`}>
                                                 {currentAnswer?.selectedOption === option.key && (
                                                     <CheckCircle className="h-4 w-4 text-white" />
@@ -669,14 +669,14 @@ function QuizPageContent() {
                                             <div className="flex-1">
                                                 <div className="flex items-center space-x-3">
                                                     <span className={`font-medium ${currentAnswer?.selectedOption === option.key
-                                                            ? 'text-indigo-900 dark:text-indigo-100'
-                                                            : 'text-gray-700 dark:text-gray-300'
+                                                        ? 'text-indigo-900 dark:text-indigo-100'
+                                                        : 'text-gray-700 dark:text-gray-300'
                                                         }`}>
                                                         {option.key}.
                                                     </span>
                                                     <span className={`${currentAnswer?.selectedOption === option.key
-                                                            ? 'text-indigo-900 dark:text-indigo-100'
-                                                            : 'text-gray-900 dark:text-gray-100'
+                                                        ? 'text-indigo-900 dark:text-indigo-100'
+                                                        : 'text-gray-900 dark:text-gray-100'
                                                         }`}>
                                                         {option.text}
                                                     </span>
@@ -709,10 +709,10 @@ function QuizPageContent() {
                                             key={index}
                                             onClick={() => setCurrentQuestionIndex(index)}
                                             className={`w-8 h-8 rounded-full text-sm font-medium transition-all ${index === currentQuestionIndex
-                                                    ? 'bg-indigo-600 text-white'
-                                                    : answers[index]?.selectedOption
-                                                        ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                                                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                                ? 'bg-indigo-600 text-white'
+                                                : answers[index]?.selectedOption
+                                                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                                                 }`}
                                         >
                                             {index + 1}
@@ -724,7 +724,7 @@ function QuizPageContent() {
                                     <Button
                                         onClick={handleSubmitQuiz}
                                         className="bg-green-600 hover:bg-green-700 text-white flex items-center space-x-2"
-                                        disabled={getAnsweredCount() < questions.length}
+                                        // disabled={getAnsweredCount() < questions.length}
                                     >
                                         <CheckCircle className="h-4 w-4" />
                                         <span>Submit Quiz</span>

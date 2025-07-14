@@ -1,50 +1,54 @@
-// app/api/rooms/[roomId]/questions/route.ts
-import { NextRequest } from 'next/server'
-import { connectDB } from '@/lib/db'
-import mongoose from 'mongoose'
+// app/api/questions/get/[roomId]/route.ts
+import { NextRequest } from 'next/server';
+import { connectDB } from '@/lib/db';
+import mongoose, { Types } from 'mongoose';
 
-import QuizRoom from '@/models/QuizRoom'
-import Question from '@/models/Question'
+import QuizRoom from '@/models/QuizRoom';
+import Question from '@/models/Question';
 
-export const dynamic = 'force-dynamic'   // always server‑side
+export const dynamic = 'force-dynamic';
 
 export async function GET(
     _req: NextRequest,
-    { params }: { params: { roomId: string } },
+    { params }: { params: Promise<{ roomId: string }> },   // ← params is a Promise
 ) {
-    await connectDB()                      // open (or reuse) Mongo connection
+    await connectDB();
 
     try {
-        const { roomId } = params
+        /* ────── await params FIRST ────── */
+        const { roomId } = await params;                      // ✅ no warning
 
-        /* ───────────── validate roomId ───────────── */
-        if (!mongoose.Types.ObjectId.isValid(roomId)) {
+        if (!Types.ObjectId.isValid(roomId)) {
             return new Response(
                 JSON.stringify({ error: 'Invalid room ID format' }),
                 { status: 400 },
-            )
+            );
         }
 
-        /* ───────────── find room + its quiz ───────────── */
+        /* ────── fetch room + quiz ────── */
         const room = await QuizRoom.findById(roomId)
-            .populate({ path: 'quizId', model: 'Quiz' })  // brings in quiz doc
-            .exec()
+            .populate({ path: 'quizId', model: 'Quiz' })
+            .exec();
 
         if (!room) {
             return new Response(
-                JSON.stringify({ error: 'Invalid room' }),
+                JSON.stringify({ error: 'Room not found' }),
                 { status: 404 },
-            )
+            );
         }
 
-        const quizDoc = room.quizId as any   // populated Quiz document
+        const quizDoc = room.quizId as {
+            _id: Types.ObjectId;
+            title: string;
+            description: string;
+            duration: number;
+        };
 
-        /* ───────────── fetch questions for this quiz ───────────── */
+        /* ────── fetch questions ────── */
         const questions = await Question.find({ quizId: quizDoc._id })
-            .select('id text imageUrl optionA optionB optionC optionD marks')
-            .exec()
+            .select('text imageUrl optionA optionB optionC optionD marks') // _id comes by default
+            .exec();
 
-        /* ───────────── respond ───────────── */
         return new Response(
             JSON.stringify({
                 questions,
@@ -56,12 +60,12 @@ export async function GET(
                 },
             }),
             { status: 200 },
-        )
+        );
     } catch (err) {
-        console.error('Fetch Questions Error:', err)
+        console.error('Fetch Questions Error:', err);
         return new Response(
-            JSON.stringify({ error: 'Something went wrong' }),
+            JSON.stringify({ error: 'Internal server error' }),
             { status: 500 },
-        )
+        );
     }
 }
