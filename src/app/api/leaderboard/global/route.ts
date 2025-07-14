@@ -1,6 +1,12 @@
+import mongoose from 'mongoose'
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'
-import mongoose from 'mongoose'
+
+import '@/models/User';
+import '@/models/Quiz';
+import '@/models/QuizRoom';
+import '@/models/Participation';
+import '@/models/ParticipantAnswer';
 
 import Participation from '@/models/Participation'
 import ParticipantAnswer from '@/models/ParticipantAnswer'

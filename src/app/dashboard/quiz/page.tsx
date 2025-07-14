@@ -115,6 +115,7 @@ function QuizPageContent() {
                 });
 
                 const fetchedRoomId = roomResponse.data.roomId;
+                console.log(fetchedRoomId);
                 setRoomId(fetchedRoomId);
 
                 // Step 1.5: Get authenticated user ID and join the room
