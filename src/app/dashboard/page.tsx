@@ -20,7 +20,6 @@ import {
     Target,
     RefreshCw,
     AlertCircle,
-    ExternalLink
 } from "lucide-react";
 
 // ✅ Define types
@@ -342,7 +341,7 @@ export default function Dashboard() {
                                                     <th className="text-left py-3 px-4 font-medium text-gray-700">Score</th>
                                                     <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
                                                     <th className="text-left py-3 px-4 font-medium text-gray-700">Date</th>
-                                                    <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
+                                                    {/* <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th> */}
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -388,7 +387,7 @@ export default function Dashboard() {
                                                                 </span>
                                                             </div>
                                                         </td>
-                                                        <td className="py-4 px-4">
+                                                        {/* <td className="py-4 px-4">
                                                             {quiz.completed && (
                                                                 <button
                                                                     onClick={() => window.open(`/leaderboard?roomId=${quiz.roomId}`, '_blank')}
@@ -398,7 +397,7 @@ export default function Dashboard() {
                                                                     <span>View Leaderboard</span>
                                                                 </button>
                                                             )}
-                                                        </td>
+                                                        </td> */}
                                                     </tr>
                                                 ))}
                                             </tbody>

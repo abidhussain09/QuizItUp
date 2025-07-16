@@ -1,203 +1,171 @@
-import { prisma } from '@/lib/prisma';
+// app/api/admin/dashboard-stats/route.ts
 import { NextRequest } from 'next/server';
+import { connectDB } from '@/lib/db';
+import { Types } from 'mongoose';
 
-// Force dynamic rendering for this route
+/* ── ensure models are registered ── */
+import '@/models/User';
+import '@/models/Quiz';
+import '@/models/QuizRoom';
+import '@/models/Participation';
+import '@/models/ParticipantAnswer';
+
+import User from '@/models/User';
+import Quiz from '@/models/Quiz';
+import QuizRoom from '@/models/QuizRoom';
+import Participation from '@/models/Participation';
+import ParticipantAnswer from '@/models/ParticipantAnswer';
+
 export const dynamic = 'force-dynamic';
 
+/* ---------- helper types ---------- */
+type ObjId = Types.ObjectId;
+
+interface PopUser { _id: ObjId; username: string }
+interface PopQuiz { _id: ObjId; title: string }
+interface PopQuizRoom { _id: ObjId; quizId: PopQuiz }
+interface PopParticipation {
+    _id: ObjId;
+    userId: PopUser;
+    quizRoomId: PopQuizRoom;
+    joinedAt: Date;
+    finishedAt: Date | null;
+    score: number;
+    completed: boolean;
+}
+
 export async function GET(req: NextRequest) {
+    await connectDB();
+
     try {
+        /* ── query‑param validation ── */
         const { searchParams } = new URL(req.url);
         const adminId = searchParams.get('adminId');
 
-        if (!adminId) {
-            return new Response(JSON.stringify({ error: 'Admin ID is required' }), {
-                status: 400,
-            });
-        }
+        if (!adminId)
+            return new Response(JSON.stringify({ error: 'Admin ID is required' }), { status: 400 });
 
-        // Verify admin user exists
-        const admin = await prisma.user.findUnique({
-            where: { id: adminId },
-            select: {
-                id: true,
-                username: true,
-                role: true
-            }
+        if (!Types.ObjectId.isValid(adminId))
+            return new Response(JSON.stringify({ error: 'Invalid Admin ID' }), { status: 400 });
+
+        /* ── verify admin ── */
+        const admin = await User.findById(adminId)
+            .select('role')
+            .lean<{ _id: ObjId; role: string }>();
+
+        if (!admin || admin.role !== 'ADMIN')
+            return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403 });
+
+        const adminObjId = new Types.ObjectId(adminId);
+
+        /* ── quiz & room IDs for this admin ── */
+        const quizIds = await Quiz.find({ creatorId: adminObjId })
+            .select('_id')
+            .lean<{ _id: ObjId }[]>()
+            .then(qs => qs.map(q => q._id));
+
+        const roomIds = await QuizRoom.find({ quizId: { $in: quizIds } })
+            .select('_id')
+            .lean<{ _id: ObjId }[]>()
+            .then(rs => rs.map(r => r._id));
+
+        /* ── counts ── */
+        const [
+            totalQuizzes,
+            totalRooms,
+            totalParticipations,
+            completedParticipations,
+            avgScoreAgg,
+        ] = await Promise.all([
+            quizIds.length,
+            roomIds.length,
+            Participation.countDocuments({ quizRoomId: { $in: roomIds } }),
+            Participation.countDocuments({ completed: true, quizRoomId: { $in: roomIds } }),
+            Participation.aggregate([
+                { $match: { completed: true, quizRoomId: { $in: roomIds } } },
+                { $group: { _id: null, avgScore: { $avg: '$score' } } },
+            ]),
+        ]);
+
+        const averageScore =
+            avgScoreAgg.length > 0 ? Math.round(avgScoreAgg[0].avgScore) : 0;
+        const completionRate =
+            totalParticipations > 0
+                ? Math.round((completedParticipations / totalParticipations) * 100)
+                : 0;
+
+        /* ── top performers (10) ── */
+        const topParts = (await Participation.find({
+            completed: true,
+            quizRoomId: { $in: roomIds },
+        })
+            .sort({ score: -1, finishedAt: 1 })
+            .limit(10)
+            .populate({ path: 'userId', select: 'username' })
+            .populate({ path: 'quizRoomId', populate: { path: 'quizId', select: 'title' } })
+            .lean()
+            .exec()) as unknown as PopParticipation[];
+
+        /* answers for accuracy */
+        const topPartIds = topParts.map(p => p._id);
+        const topAnswers = await ParticipantAnswer.find({ participationId: { $in: topPartIds } })
+            .select('participationId isCorrect')
+            .lean();
+
+        const answersByPart = new Map<string, typeof topAnswers>();
+        topAnswers.forEach(a => {
+            const key = (a.participationId as ObjId).toString();
+            if (!answersByPart.has(key)) answersByPart.set(key, []);
+            answersByPart.get(key)!.push(a);
         });
 
-        if (!admin || admin.role !== 'ADMIN') {
-            return new Response(JSON.stringify({ error: 'Admin access required' }), {
-                status: 403,
-            });
-        }
-
-        // Get comprehensive quiz statistics
-        const totalQuizzes = await prisma.quiz.count({
-            where: { creatorId: adminId }
-        });
-
-        const totalRooms = await prisma.quizRoom.count({
-            where: {
-                quiz: {
-                    creatorId: adminId
-                }
-            }
-        });
-
-        const totalParticipations = await prisma.participation.count({
-            where: {
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            }
-        });
-
-        const completedParticipations = await prisma.participation.count({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            }
-        });
-
-        // Get average score for admin's quizzes
-        const avgScoreResult = await prisma.participation.aggregate({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            _avg: {
-                score: true
-            }
-        });
-
-        // Get top performers across admin's quizzes
-        const topPerformers = await prisma.participation.findMany({
-            where: {
-                completed: true,
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
-                },
-                quizRoom: {
-                    include: {
-                        quiz: {
-                            select: {
-                                id: true,
-                                title: true
-                            }
-                        }
-                    }
-                },
-                participantAnswers: {
-                    select: {
-                        isCorrect: true,
-                        marks: true
-                    }
-                }
-            },
-            orderBy: [
-                { score: 'desc' },
-                { finishedAt: 'asc' }
-            ],
-            take: 10
-        });
-
-        // Get recent quiz activity
-        const recentActivity = await prisma.participation.findMany({
-            where: {
-                quizRoom: {
-                    quiz: {
-                        creatorId: adminId
-                    }
-                }
-            },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        username: true
-                    }
-                },
-                quizRoom: {
-                    include: {
-                        quiz: {
-                            select: {
-                                id: true,
-                                title: true
-                            }
-                        }
-                    }
-                }
-            },
-            orderBy: [
-                { joinedAt: 'desc' }
-            ],
-            take: 20
-        });
-
-        // Calculate completion rate
-        const completionRate = totalParticipations > 0 
-            ? Math.round((completedParticipations / totalParticipations) * 100)
-            : 0;
-
-        // Format top performers data
-        const formattedTopPerformers = topPerformers.map((participation, index) => {
-            const correctAnswers = participation.participantAnswers.filter(answer => answer.isCorrect).length;
-            const totalQuestions = participation.participantAnswers.length;
-            const accuracy = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+        const formattedTop = topParts.map((p, idx) => {
+            const ans = answersByPart.get(p._id.toString()) ?? [];
+            const correct = ans.filter(a => a.isCorrect).length;
+            const accuracy = ans.length ? Math.round((correct / ans.length) * 100) : 0;
 
             return {
-                rank: index + 1,
+                rank: idx + 1,
                 participant: {
-                    id: participation.user.id,
-                    username: participation.user.username
+                    id: p.userId._id.toString(),
+                    username: p.userId.username,
                 },
                 quiz: {
-                    id: participation.quizRoom.quiz.id,
-                    title: participation.quizRoom.quiz.title
+                    id: p.quizRoomId.quizId._id.toString(),
+                    title: p.quizRoomId.quizId.title,
                 },
-                score: participation.score,
-                accuracy: accuracy,
-                finishedAt: participation.finishedAt
+                score: p.score,
+                accuracy,
+                finishedAt: p.finishedAt,
             };
         });
 
-        // Format recent activity
-        const formattedRecentActivity = recentActivity.map((participation) => ({
-            id: participation.id,
+        /* ── recent activity (20) ── */
+        const recentParts = (await Participation.find({ quizRoomId: { $in: roomIds } })
+            .sort({ joinedAt: -1 })
+            .limit(20)
+            .populate({ path: 'userId', select: 'username' })
+            .populate({ path: 'quizRoomId', populate: { path: 'quizId', select: 'title' } })
+            .lean()
+            .exec()) as unknown as PopParticipation[];
+
+        const formattedRecent = recentParts.map(p => ({
+            id: p._id.toString(),
             participant: {
-                id: participation.user.id,
-                username: participation.user.username
+                id: p.userId._id.toString(),
+                username: p.userId.username,
             },
             quiz: {
-                id: participation.quizRoom.quiz.id,
-                title: participation.quizRoom.quiz.title
+                id: p.quizRoomId.quizId._id.toString(),
+                title: p.quizRoomId.quizId.title,
             },
-            completed: participation.completed,
-            score: participation.score,
-            joinedAt: participation.joinedAt,
-            finishedAt: participation.finishedAt
+            completed: p.completed,
+            score: p.score,
+            joinedAt: p.joinedAt,
+            finishedAt: p.finishedAt,
         }));
 
+        /* ── assemble ── */
         const dashboardStats = {
             overview: {
                 totalQuizzes,
@@ -205,20 +173,18 @@ export async function GET(req: NextRequest) {
                 totalParticipations,
                 completedParticipations,
                 completionRate,
-                averageScore: Math.round(avgScoreResult._avg.score || 0)
+                averageScore,
             },
-            topPerformers: formattedTopPerformers,
-            recentActivity: formattedRecentActivity
+            topPerformers: formattedTop,
+            recentActivity: formattedRecent,
         };
 
-        return new Response(JSON.stringify(dashboardStats), {
-            status: 200,
-        });
-
-    } catch (error) {
-        console.error('Error fetching admin dashboard stats:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch dashboard statistics' }), {
-            status: 500,
-        });
+        return new Response(JSON.stringify(dashboardStats), { status: 200 });
+    } catch (err) {
+        console.error('Error fetching admin dashboard stats:', err);
+        return new Response(
+            JSON.stringify({ error: 'Failed to fetch dashboard statistics' }),
+            { status: 500 },
+        );
     }
 }

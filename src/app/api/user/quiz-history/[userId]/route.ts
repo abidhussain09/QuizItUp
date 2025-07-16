@@ -1,142 +1,174 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
+// File: src/app/api/user/quiz-history/[userId]/route.ts
+import { connectDB } from '@/lib/db';
+import { Types } from 'mongoose';
 
-// Force dynamic rendering for this route
+import User from '@/models/User';
+import Participation from '@/models/Participation';
+import Question from '@/models/Question';
+import ParticipantAnswer from '@/models/ParticipantAnswer';
+
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-    _req: NextRequest,
-    { params }: { params: Promise<{ userId: string }> }
-) {
-    try {
-        const { userId } = await params;
+export async function GET(req: Request) {
+    await connectDB();
 
+    // Extract userId from URL
+    const { pathname } = new URL(req.url);
+    const segments = pathname.split('/');
+    const userId = segments[segments.indexOf('quiz-history') + 1];
+
+    try {
         if (!userId) {
             return new Response(JSON.stringify({ error: 'User ID is required' }), {
                 status: 400,
             });
         }
+        if (!Types.ObjectId.isValid(userId)) {
+            return new Response(JSON.stringify({ error: 'Invalid User ID' }), {
+                status: 400,
+            });
+        }
 
-        // Verify user exists
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                username: true,
-                email: true
-            }
-        });
-
+        // Fetch user
+        const user = await User.findById(userId)
+            .select('_id username email')
+            .lean<{ _id: Types.ObjectId; username: string; email: string }>();
         if (!user) {
             return new Response(JSON.stringify({ error: 'User not found' }), {
                 status: 404,
             });
         }
 
-        // Get all participations for this user
-        const participations = await prisma.participation.findMany({
-            where: { 
-                userId: userId 
-            },
-            include: {
-                quizRoom: {
-                    include: {
-                        quiz: {
-                            select: {
-                                id: true,
-                                title: true,
-                                description: true,
-                                duration: true,
-                                creatorId: true,
-                                createdAt: true,
-                                questions: {
-                                    select: {
-                                        marks: true
-                                    }
-                                }
-                            }
-                        }
-                    }
+        // Get participations
+        const participations = await Participation.find({ userId })
+            .sort({ joinedAt: -1 })
+            .populate({
+                path: 'quizRoomId',
+                populate: {
+                    path: 'quizId',
+                    model: 'Quiz',
+                    select: 'title description duration creatorId createdAt',
                 },
-                participantAnswers: {
-                    select: {
-                        isCorrect: true,
-                        marks: true
-                    }
-                }
-            },
-            orderBy: [
-                { joinedAt: 'desc' }
-            ]
+            })
+            .lean<{
+                _id: Types.ObjectId;
+                quizRoomId: {
+                    _id: Types.ObjectId;
+                    quizId: {
+                        _id: Types.ObjectId;
+                        title: string;
+                        description: string;
+                        duration: number;
+                        creatorId: Types.ObjectId;
+                        createdAt: Date;
+                    };
+                };
+                score: number;
+                completed: boolean;
+                joinedAt: Date;
+                finishedAt: Date | null;
+            }[]>();
+
+        const partIds = participations.map(p => p._id);
+        const quizIds = participations.map(p => p.quizRoomId.quizId._id);
+
+        // Get answers + questions
+        const [answers, questions] = await Promise.all([
+            ParticipantAnswer.find({ participationId: { $in: partIds } })
+                .select('participationId isCorrect marks')
+                .lean<{ participationId: Types.ObjectId; isCorrect: boolean; marks: number }[]>(),
+            Question.find({ quizId: { $in: quizIds } })
+                .select('quizId marks')
+                .lean<{ quizId: Types.ObjectId; marks: number }[]>(),
+        ]);
+
+        const ansByPart = new Map<string, typeof answers>();
+        answers.forEach(a => {
+            const k = a.participationId.toString();
+            if (!ansByPart.has(k)) ansByPart.set(k, []);
+            ansByPart.get(k)!.push(a);
         });
 
-        // Calculate detailed statistics for each participation
-        const quizHistory = participations.map((participation) => {
-            const correctAnswers = participation.participantAnswers.filter(answer => answer.isCorrect).length;
-            const totalQuestions = participation.quizRoom.quiz.questions.length;
-            const answeredQuestions = participation.participantAnswers.length;
-            const accuracy = answeredQuestions > 0 ? Math.round((correctAnswers / answeredQuestions) * 100) : 0;
-            const totalPossibleMarks = participation.quizRoom.quiz.questions.reduce((sum, q) => sum + q.marks, 0);
-            
-            // Calculate completion time in minutes
-            const completionTime = participation.finishedAt && participation.joinedAt 
-                ? Math.round((participation.finishedAt.getTime() - participation.joinedAt.getTime()) / (1000 * 60))
-                : null;
+        const quesByQuiz = new Map<string, typeof questions>();
+        questions.forEach(q => {
+            const k = q.quizId.toString();
+            if (!quesByQuiz.has(k)) quesByQuiz.set(k, []);
+            quesByQuiz.get(k)!.push(q);
+        });
+
+        const quizHistory = participations.map(p => {
+            const quizDoc = p.quizRoomId.quizId;
+            const quizIdStr = quizDoc._id.toString();
+            const questions = quesByQuiz.get(quizIdStr) || [];
+
+            const answers = ansByPart.get(p._id.toString()) || [];
+            const correctAnswers = answers.filter(a => a.isCorrect).length;
+            const answeredQuestions = answers.length;
+            const accuracy = answeredQuestions
+                ? Math.round((correctAnswers / answeredQuestions) * 100)
+                : 0;
+            const totalPossibleMarks = questions.reduce((sum, q) => sum + q.marks, 0);
+
+            const completionTime =
+                p.finishedAt && p.joinedAt
+                    ? Math.round((p.finishedAt.getTime() - p.joinedAt.getTime()) / 60000)
+                    : null;
 
             return {
-                id: participation.id,
+                id: p._id.toString(),
                 quiz: {
-                    id: participation.quizRoom.quiz.id,
-                    title: participation.quizRoom.quiz.title,
-                    description: participation.quizRoom.quiz.description,
-                    duration: participation.quizRoom.quiz.duration,
-                    createdBy: participation.quizRoom.quiz.creatorId,
-                    createdAt: participation.quizRoom.quiz.createdAt
+                    id: quizDoc._id.toString(),
+                    title: quizDoc.title,
+                    description: quizDoc.description,
+                    duration: quizDoc.duration,
+                    createdBy: quizDoc.creatorId.toString(),
+                    createdAt: quizDoc.createdAt,
                 },
-                roomId: participation.quizRoomId,
-                score: participation.score,
-                correctAnswers: correctAnswers,
-                totalQuestions: totalQuestions,
-                answeredQuestions: answeredQuestions,
-                accuracy: accuracy,
-                totalPossibleMarks: totalPossibleMarks,
-                completionTime: completionTime,
-                completed: participation.completed,
-                joinedAt: participation.joinedAt,
-                finishedAt: participation.finishedAt,
-                status: participation.completed ? 'completed' : 'incomplete'
+                roomId: p.quizRoomId._id.toString(),
+                score: p.score,
+                correctAnswers,
+                totalQuestions: questions.length,
+                answeredQuestions,
+                accuracy,
+                totalPossibleMarks,
+                completionTime,
+                completed: p.completed,
+                joinedAt: p.joinedAt,
+                finishedAt: p.finishedAt,
+                status: p.completed ? 'completed' : 'incomplete',
             };
         });
 
-        // Calculate user statistics
         const completedQuizzes = quizHistory.filter(q => q.completed);
-        const totalScore = completedQuizzes.reduce((sum, q) => sum + q.score, 0);
-        const averageScore = completedQuizzes.length > 0 ? Math.round(totalScore / completedQuizzes.length) : 0;
-        const totalCorrectAnswers = completedQuizzes.reduce((sum, q) => sum + q.correctAnswers, 0);
-        const totalQuestionsAttempted = completedQuizzes.reduce((sum, q) => sum + q.answeredQuestions, 0);
-        const overallAccuracy = totalQuestionsAttempted > 0 ? Math.round((totalCorrectAnswers / totalQuestionsAttempted) * 100) : 0;
+        const totalScore = completedQuizzes.reduce((s, q) => s + q.score, 0);
+        const totalCorrectAnswers = completedQuizzes.reduce((s, q) => s + q.correctAnswers, 0);
+        const totalAttempted = completedQuizzes.reduce((s, q) => s + q.answeredQuestions, 0);
 
         const userStats = {
             totalQuizzes: participations.length,
             completedQuizzes: completedQuizzes.length,
             incompleteQuizzes: participations.length - completedQuizzes.length,
-            totalScore: totalScore,
-            averageScore: averageScore,
-            overallAccuracy: overallAccuracy,
-            totalCorrectAnswers: totalCorrectAnswers,
-            totalQuestionsAttempted: totalQuestionsAttempted
+            totalScore,
+            averageScore: completedQuizzes.length ? Math.round(totalScore / completedQuizzes.length) : 0,
+            overallAccuracy: totalAttempted ? Math.round((totalCorrectAnswers / totalAttempted) * 100) : 0,
+            totalCorrectAnswers,
+            totalQuestionsAttempted: totalAttempted,
         };
 
-        return new Response(JSON.stringify({
-            user,
-            quizHistory,
-            userStats
-        }), {
-            status: 200,
-        });
-
-    } catch (error) {
-        console.error('Error fetching user quiz history:', error);
+        return new Response(
+            JSON.stringify({
+                user: {
+                    id: user._id.toString(),
+                    username: user.username,
+                    email: user.email,
+                },
+                quizHistory,
+                userStats,
+            }),
+            { status: 200 }
+        );
+    } catch (err) {
+        console.error('Error fetching quiz history:', err);
         return new Response(JSON.stringify({ error: 'Failed to fetch quiz history' }), {
             status: 500,
         });

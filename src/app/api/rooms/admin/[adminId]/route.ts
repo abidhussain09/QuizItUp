@@ -1,151 +1,165 @@
-import { prisma } from '@/lib/prisma';
-import { NextRequest } from 'next/server';
+// src/app/api/rooms/admin/[adminId]/route.ts
+import { connectDB } from '@/lib/db';
+import { Types } from 'mongoose';
 
-// Force dynamic rendering for this route
-export const dynamic = 'force-dynamic';
+import '@/models/User';
+import '@/models/Quiz';
+import '@/models/QuizRoom';
+import '@/models/Question';
+import '@/models/Participation';
 
-export async function GET(
-    req: NextRequest,
-    { params }: { params: Promise<{ adminId: string }> }
-) {
+import User from '@/models/User';
+import Quiz from '@/models/Quiz';
+import QuizRoom from '@/models/QuizRoom';
+import Question from '@/models/Question';
+import Participation from '@/models/Participation';
+
+export const dynamic = 'force-dynamic'; // always server‑side
+
+export async function GET(req: Request) {
+    await connectDB();
+
+    /* ── extract adminId from pathname "/api/rooms/admin/[adminId]" ── */
+    const { pathname } = new URL(req.url);
+    // segments: ['', 'api', 'rooms', 'admin', '[adminId]']
+    const segments = pathname.split('/');
+    const adminId = segments[segments.indexOf('admin') + 1];
+
     try {
-        const { adminId } = await params;
+        /* ── validation ── */
+        if (!adminId)
+            return new Response(JSON.stringify({ error: 'Admin ID is required' }), { status: 400 });
 
-        if (!adminId) {
-            return new Response(JSON.stringify({ error: 'Admin ID is required' }), {
-                status: 400,
-            });
-        }
+        if (!Types.ObjectId.isValid(adminId))
+            return new Response(JSON.stringify({ error: 'Invalid Admin ID format' }), { status: 400 });
 
-        // Verify the user exists and is an admin
-        const admin = await prisma.user.findUnique({
-            where: { id: adminId },
+        /* ── verify admin ── */
+        const admin = await User.findById(adminId).select('role').lean<{ role: string }>();
+
+        if (!admin)
+            return new Response(JSON.stringify({ error: 'Admin not found' }), { status: 404 });
+
+        if (admin.role !== 'ADMIN')
+            return new Response(
+                JSON.stringify({ error: 'Access denied. Admin role required.' }),
+                { status: 403 },
+            );
+
+        /* ── quizzes created by this admin ── */
+        const quizzes = await Quiz.find({ creatorId: adminId })
+            .select('_id title description duration createdAt')
+            .lean<{ _id: Types.ObjectId; title: string; description: string; duration: number; createdAt: Date }[]>();
+
+        const quizIds = quizzes.map(q => q._id);
+
+        /* ── rooms for those quizzes ── */
+        const rooms = await QuizRoom.find({ quizId: { $in: quizIds } })
+            .sort({ createdAt: -1 })
+            .populate({
+                path: 'quizId',
+                select: 'title description duration createdAt',
+            })
+            .lean<{
+                _id: Types.ObjectId;
+                inviteCode: string;
+                createdAt: Date;
+                startTime?: Date;
+                endTime?: Date;
+                quizId: {
+                    _id: Types.ObjectId;
+                    title: string;
+                    description: string;
+                    duration: number;
+                    createdAt: Date;
+                };
+            }[]>();
+
+        const roomIds = rooms.map(r => r._id);
+
+        /* ── participations for all rooms ── */
+        const participations = await Participation.find({ quizRoomId: { $in: roomIds } })
+            .populate({ path: 'userId', select: 'username' })
+            .lean<{
+                _id: Types.ObjectId;
+                quizRoomId: Types.ObjectId;
+                userId: { _id: Types.ObjectId; username: string };
+                joinedAt: Date;
+                completed: boolean;
+            }[]>();
+
+        /* group participations by roomId */
+        const partsByRoom = new Map<string, typeof participations>();
+        participations.forEach(p => {
+            const key = p.quizRoomId.toString();
+            if (!partsByRoom.has(key)) partsByRoom.set(key, []);
+            partsByRoom.get(key)!.push(p);
         });
 
-        if (!admin) {
-            return new Response(JSON.stringify({ error: 'Admin not found' }), {
-                status: 404,
-            });
-        }
+        /* question counts per quiz */
+        const questionCounts = await Question.aggregate([
+            { $match: { quizId: { $in: quizIds } } },
+            { $group: { _id: '$quizId', total: { $sum: 1 } } },
+        ]);
 
-        if (admin.role !== 'ADMIN') {
-            return new Response(JSON.stringify({ error: 'Access denied. Admin role required.' }), {
-                status: 403,
-            });
-        }
+        const questionsByQuiz = new Map<string, number>();
+        questionCounts.forEach(q => questionsByQuiz.set(q._id.toString(), q.total));
 
-        // Fetch all quiz rooms created by this admin with related data
-        const rooms = await prisma.quizRoom.findMany({
-            where: {
-                quiz: {
-                    creatorId: adminId,
-                },
-            },
-            include: {
-                quiz: {
-                    select: {
-                        id: true,
-                        title: true,
-                        description: true,
-                        duration: true,
-                        createdAt: true,
-                        _count: {
-                            select: {
-                                questions: true,
-                            },
-                        },
-                    },
-                },
-                _count: {
-                    select: {
-                        participations: true,
-                    },
-                },
-                participations: {
-                    select: {
-                        id: true,
-                        joinedAt: true,
-                        completed: true,
-                        user: {
-                            select: {
-                                id: true,
-                                username: true,
-                            },
-                        },
-                    },
-                },
-            },
-            orderBy: {
-                createdAt: 'desc',
-            },
-        });
-
-        // Transform the data to include computed fields
+        /* transform rooms */
+        const now = new Date();
         const roomsWithStatus = rooms.map(room => {
-            const participantCount = room._count.participations;
-            const questionCount = room.quiz._count.questions;
-            const completedParticipants = room.participations.filter(p => p.completed).length;
-            const now = new Date();
+            const quizDoc = room.quizId;
+            const parts = partsByRoom.get(room._id.toString()) ?? [];
+            const participantCount = parts.length;
+            const completedCount = parts.filter(p => p.completed).length;
+            const questionCount = questionsByQuiz.get(quizDoc._id.toString()) ?? 0;
 
-            // Determine room status based on time and other factors
             let status: 'active' | 'inactive' | 'no_questions' | 'not_started' | 'closed' = 'inactive';
-
-            if (questionCount === 0) {
-                status = 'no_questions';
-            } else if (room.startTime && room.endTime) {
-                // Time-based status logic
-                if (now < room.startTime) {
-                    status = 'not_started';
-                } else if (now > room.endTime) {
-                    status = 'closed';
-                } else if (participantCount > 0) {
-                    status = 'active';
-                } else {
-                    status = 'inactive';
-                }
-            } else if (participantCount > 0) {
-                // Legacy rooms without time constraints
-                status = 'active';
-            }
+            if (questionCount === 0) status = 'no_questions';
+            else if (room.startTime && room.endTime) {
+                if (now < room.startTime) status = 'not_started';
+                else if (now > room.endTime) status = 'closed';
+                else status = participantCount > 0 ? 'active' : 'inactive';
+            } else if (participantCount > 0) status = 'active';
 
             return {
-                id: room.id,
+                id: room._id.toString(),
                 inviteCode: room.inviteCode,
                 createdAt: room.createdAt,
                 startTime: room.startTime,
                 endTime: room.endTime,
                 quiz: {
-                    id: room.quiz.id,
-                    title: room.quiz.title,
-                    description: room.quiz.description,
-                    duration: room.quiz.duration,
-                    createdAt: room.quiz.createdAt,
-                    questionCount: questionCount,
+                    id: quizDoc._id.toString(),
+                    title: quizDoc.title,
+                    description: quizDoc.description,
+                    duration: quizDoc.duration,
+                    createdAt: quizDoc.createdAt,
+                    questionCount,
                 },
-                participantCount: participantCount,
-                completedParticipants: completedParticipants,
-                status: status,
-                participants: room.participations.map(p => ({
-                    id: p.id,
+                participantCount,
+                completedParticipants: completedCount,
+                status,
+                participants: parts.map(p => ({
+                    id: p._id.toString(),
                     joinedAt: p.joinedAt,
                     completed: p.completed,
-                    user: p.user,
+                    user: p.userId,
                 })),
             };
         });
 
-        return new Response(JSON.stringify({ 
-            rooms: roomsWithStatus,
+        /* summary */
+        const summary = {
             totalRooms: roomsWithStatus.length,
             activeRooms: roomsWithStatus.filter(r => r.status === 'active').length,
-            totalParticipants: roomsWithStatus.reduce((sum, r) => sum + r.participantCount, 0),
-        }), {
-            status: 200,
-        });
-    } catch (error) {
-        console.error('Error fetching admin rooms:', error);
-        return new Response(JSON.stringify({ error: 'Failed to fetch rooms' }), {
-            status: 500,
-        });
+            totalParticipants: roomsWithStatus.reduce((s, r) => s + r.participantCount, 0),
+        };
+
+        return new Response(JSON.stringify({ rooms: roomsWithStatus, ...summary }), { status: 200 });
+    } catch (err) {
+        console.error('Error fetching admin rooms:', err);
+        return new Response(
+            JSON.stringify({ error: 'Failed to fetch rooms' }),
+            { status: 500 },
+        );
     }
 }
