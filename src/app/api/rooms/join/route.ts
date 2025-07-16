@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'          
 import QuizRoom from '@/models/QuizRoom'
-import Quiz from '@/models/Quiz'
 import Question from '@/models/Question'
 import Participation from '@/models/Participation'
 

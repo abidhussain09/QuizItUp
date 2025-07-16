@@ -20,7 +20,6 @@ import {
     Target,
     RefreshCw,
     AlertCircle,
-    ExternalLink
 } from "lucide-react";
 
 // ✅ Define types

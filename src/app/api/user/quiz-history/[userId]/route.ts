@@ -1,11 +1,9 @@
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'
-import mongoose, { Types } from 'mongoose'
+import { Types } from 'mongoose'
 
 import User from '@/models/User'
 import Participation from '@/models/Participation'
-import QuizRoom from '@/models/QuizRoom'
-import Quiz from '@/models/Quiz'
 import Question from '@/models/Question'
 import ParticipantAnswer from '@/models/ParticipantAnswer'
 
