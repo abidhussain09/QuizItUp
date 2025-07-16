@@ -1,52 +1,75 @@
-// app/api/admin/dashboard/route.ts
-import { NextRequest } from 'next/server'
-import { connectDB } from '@/lib/db'
-import mongoose, { Types } from 'mongoose'
+// app/api/admin/dashboard-stats/route.ts
+import { NextRequest } from 'next/server';
+import { connectDB } from '@/lib/db';
+import { Types } from 'mongoose';
 
-import User from '@/models/User'
-import Quiz from '@/models/Quiz'
-import QuizRoom from '@/models/QuizRoom'
-import Participation from '@/models/Participation'
-import ParticipantAnswer from '@/models/ParticipantAnswer'
+/* ── ensure models are registered ── */
+import '@/models/User';
+import '@/models/Quiz';
+import '@/models/QuizRoom';
+import '@/models/Participation';
+import '@/models/ParticipantAnswer';
 
-export const dynamic = 'force-dynamic'
+import User from '@/models/User';
+import Quiz from '@/models/Quiz';
+import QuizRoom from '@/models/QuizRoom';
+import Participation from '@/models/Participation';
+import ParticipantAnswer from '@/models/ParticipantAnswer';
+
+export const dynamic = 'force-dynamic';
+
+/* ---------- helper types ---------- */
+type ObjId = Types.ObjectId;
+
+interface PopUser { _id: ObjId; username: string }
+interface PopQuiz { _id: ObjId; title: string }
+interface PopQuizRoom { _id: ObjId; quizId: PopQuiz }
+interface PopParticipation {
+    _id: ObjId;
+    userId: PopUser;
+    quizRoomId: PopQuizRoom;
+    joinedAt: Date;
+    finishedAt: Date | null;
+    score: number;
+    completed: boolean;
+}
 
 export async function GET(req: NextRequest) {
-    await connectDB()
+    await connectDB();
 
     try {
-        /* ────────── query‑param validation ────────── */
-        const { searchParams } = new URL(req.url)
-        const adminId = searchParams.get('adminId')
+        /* ── query‑param validation ── */
+        const { searchParams } = new URL(req.url);
+        const adminId = searchParams.get('adminId');
 
-        if (!adminId) {
-            return new Response(JSON.stringify({ error: 'Admin ID is required' }), {
-                status: 400,
-            })
-        }
-        if (!Types.ObjectId.isValid(adminId)) {
-            return new Response(JSON.stringify({ error: 'Invalid Admin ID' }), {
-                status: 400,
-            })
-        }
+        if (!adminId)
+            return new Response(JSON.stringify({ error: 'Admin ID is required' }), { status: 400 });
 
-        /* ────────── verify admin user & role ────────── */
-        const admin = await User.findById(adminId).select('role username')
-        if (!admin || admin.role !== 'ADMIN') {
-            return new Response(JSON.stringify({ error: 'Admin access required' }), {
-                status: 403,
-            })
-        }
+        if (!Types.ObjectId.isValid(adminId))
+            return new Response(JSON.stringify({ error: 'Invalid Admin ID' }), { status: 400 });
 
-        const adminObjId = new Types.ObjectId(adminId)
+        /* ── verify admin ── */
+        const admin = await User.findById(adminId)
+            .select('role')
+            .lean<{ _id: ObjId; role: string }>();
 
-        /* ────────── fetch quiz & room IDs created by this admin ────────── */
-        const quizzes = await Quiz.find({ creatorId: adminObjId }).select('_id').exec()
-        const quizIds = quizzes.map(q => q._id)
-        const rooms = await QuizRoom.find({ quizId: { $in: quizIds } }).select('_id').exec()
-        const roomIds = rooms.map(r => r._id)
+        if (!admin || admin.role !== 'ADMIN')
+            return new Response(JSON.stringify({ error: 'Admin access required' }), { status: 403 });
 
-        /* ────────── basic counts ────────── */
+        const adminObjId = new Types.ObjectId(adminId);
+
+        /* ── quiz & room IDs for this admin ── */
+        const quizIds = await Quiz.find({ creatorId: adminObjId })
+            .select('_id')
+            .lean<{ _id: ObjId }[]>()
+            .then(qs => qs.map(q => q._id));
+
+        const roomIds = await QuizRoom.find({ quizId: { $in: quizIds } })
+            .select('_id')
+            .lean<{ _id: ObjId }[]>()
+            .then(rs => rs.map(r => r._id));
+
+        /* ── counts ── */
         const [
             totalQuizzes,
             totalRooms,
@@ -54,103 +77,95 @@ export async function GET(req: NextRequest) {
             completedParticipations,
             avgScoreAgg,
         ] = await Promise.all([
-            quizzes.length,
-            rooms.length,
+            quizIds.length,
+            roomIds.length,
             Participation.countDocuments({ quizRoomId: { $in: roomIds } }),
             Participation.countDocuments({ completed: true, quizRoomId: { $in: roomIds } }),
             Participation.aggregate([
                 { $match: { completed: true, quizRoomId: { $in: roomIds } } },
                 { $group: { _id: null, avgScore: { $avg: '$score' } } },
             ]),
-        ])
+        ]);
 
         const averageScore =
-            avgScoreAgg.length > 0 ? Math.round(avgScoreAgg[0].avgScore) : 0
+            avgScoreAgg.length > 0 ? Math.round(avgScoreAgg[0].avgScore) : 0;
         const completionRate =
             totalParticipations > 0
                 ? Math.round((completedParticipations / totalParticipations) * 100)
-                : 0
+                : 0;
 
-        /* ────────── top performers (limit 10) ────────── */
-        const topParts = await Participation.find({
+        /* ── top performers (10) ── */
+        const topParts = (await Participation.find({
             completed: true,
             quizRoomId: { $in: roomIds },
         })
             .sort({ score: -1, finishedAt: 1 })
             .limit(10)
             .populate({ path: 'userId', select: 'username' })
-            .populate({
-                path: 'quizRoomId',
-                populate: { path: 'quizId', select: 'title' },
-            })
-            .exec()
+            .populate({ path: 'quizRoomId', populate: { path: 'quizId', select: 'title' } })
+            .lean()
+            .exec()) as unknown as PopParticipation[];
 
-        /* gather answers for accuracy calc */
-        const topPartIds = topParts.map(p => p._id)
-        const topAnswers = await ParticipantAnswer.find({
-            participationId: { $in: topPartIds },
-        }).exec()
+        /* answers for accuracy */
+        const topPartIds = topParts.map(p => p._id);
+        const topAnswers = await ParticipantAnswer.find({ participationId: { $in: topPartIds } })
+            .select('participationId isCorrect')
+            .lean();
 
-        const ansByPart: Record<string, typeof topAnswers> = {}
+        const answersByPart = new Map<string, typeof topAnswers>();
         topAnswers.forEach(a => {
-            const k = (a.participationId as Types.ObjectId).toString()
-            if (!ansByPart[k]) ansByPart[k] = []
-            ansByPart[k].push(a)
-        })
+            const key = (a.participationId as ObjId).toString();
+            if (!answersByPart.has(key)) answersByPart.set(key, []);
+            answersByPart.get(key)!.push(a);
+        });
 
-        const formattedTopPerformers = topParts.map((p, idx) => {
-            const answers = ansByPart[p._id.toString()] ?? []
-            const correct = answers.filter(a => a.isCorrect).length
-            const acc =
-                answers.length > 0 ? Math.round((correct / answers.length) * 100) : 0
-            const quizDoc = (p.quizRoomId as any).quizId
+        const formattedTop = topParts.map((p, idx) => {
+            const ans = answersByPart.get(p._id.toString()) ?? [];
+            const correct = ans.filter(a => a.isCorrect).length;
+            const accuracy = ans.length ? Math.round((correct / ans.length) * 100) : 0;
 
             return {
                 rank: idx + 1,
                 participant: {
-                    id: (p.userId as any)._id.toString(),
-                    username: (p.userId as any).username,
+                    id: p.userId._id.toString(),
+                    username: p.userId.username,
                 },
                 quiz: {
-                    id: quizDoc._id.toString(),
-                    title: quizDoc.title,
+                    id: p.quizRoomId.quizId._id.toString(),
+                    title: p.quizRoomId.quizId.title,
                 },
                 score: p.score,
-                accuracy: acc,
+                accuracy,
                 finishedAt: p.finishedAt,
-            }
-        })
+            };
+        });
 
-        /* ────────── recent activity (last 20 joins) ────────── */
-        const recent = await Participation.find({
-            quizRoomId: { $in: roomIds },
-        })
+        /* ── recent activity (20) ── */
+        const recentParts = (await Participation.find({ quizRoomId: { $in: roomIds } })
             .sort({ joinedAt: -1 })
             .limit(20)
             .populate({ path: 'userId', select: 'username' })
-            .populate({
-                path: 'quizRoomId',
-                populate: { path: 'quizId', select: 'title' },
-            })
-            .exec()
+            .populate({ path: 'quizRoomId', populate: { path: 'quizId', select: 'title' } })
+            .lean()
+            .exec()) as unknown as PopParticipation[];
 
-        const formattedRecentActivity = recent.map(p => ({
+        const formattedRecent = recentParts.map(p => ({
             id: p._id.toString(),
             participant: {
-                id: (p.userId as any)._id.toString(),
-                username: (p.userId as any).username,
+                id: p.userId._id.toString(),
+                username: p.userId.username,
             },
             quiz: {
-                id: (p.quizRoomId as any).quizId._id.toString(),
-                title: (p.quizRoomId as any).quizId.title,
+                id: p.quizRoomId.quizId._id.toString(),
+                title: p.quizRoomId.quizId.title,
             },
             completed: p.completed,
             score: p.score,
             joinedAt: p.joinedAt,
             finishedAt: p.finishedAt,
-        }))
+        }));
 
-        /* ────────── assemble dashboard stats ────────── */
+        /* ── assemble ── */
         const dashboardStats = {
             overview: {
                 totalQuizzes,
@@ -160,16 +175,16 @@ export async function GET(req: NextRequest) {
                 completionRate,
                 averageScore,
             },
-            topPerformers: formattedTopPerformers,
-            recentActivity: formattedRecentActivity,
-        }
+            topPerformers: formattedTop,
+            recentActivity: formattedRecent,
+        };
 
-        return new Response(JSON.stringify(dashboardStats), { status: 200 })
+        return new Response(JSON.stringify(dashboardStats), { status: 200 });
     } catch (err) {
-        console.error('Error fetching admin dashboard stats:', err)
+        console.error('Error fetching admin dashboard stats:', err);
         return new Response(
             JSON.stringify({ error: 'Failed to fetch dashboard statistics' }),
             { status: 500 },
-        )
+        );
     }
 }

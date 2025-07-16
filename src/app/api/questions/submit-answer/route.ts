@@ -5,7 +5,6 @@ import mongoose from 'mongoose'
 import Participation from '@/models/Participation'
 import Question from '@/models/Question'
 import ParticipantAnswer from '@/models/ParticipantAnswer'
-import QuizRoom from '@/models/QuizRoom'
 
 export const dynamic = 'force-dynamic'   
 

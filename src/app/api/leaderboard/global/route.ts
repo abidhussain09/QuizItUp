@@ -10,7 +10,6 @@ import '@/models/ParticipantAnswer';
 
 import Participation from '@/models/Participation'
 import ParticipantAnswer from '@/models/ParticipantAnswer'
-import QuizRoom from '@/models/QuizRoom'
 import Quiz from '@/models/Quiz'
 import User from '@/models/User'
 

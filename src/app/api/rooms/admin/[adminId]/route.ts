@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'
 
-import mongoose, { Types } from 'mongoose'
+import { Types } from 'mongoose'
 import User from '@/models/User'
 import Quiz from '@/models/Quiz'
 import QuizRoom from '@/models/QuizRoom'
@@ -19,7 +19,6 @@ export async function GET(
     try {
         const { adminId } = params
 
-        /* ───── validation ───── */
         if (!adminId) {
             return new Response(JSON.stringify({ error: 'Admin ID is required' }), { status: 400 })
         }

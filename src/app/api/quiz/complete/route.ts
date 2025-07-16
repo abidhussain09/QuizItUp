@@ -1,20 +1,15 @@
-// app/api/complete-quiz/route.ts
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'
 
 import mongoose from 'mongoose'
 import Participation from '@/models/Participation'
 import ParticipantAnswer from '@/models/ParticipantAnswer'
-import QuizRoom from '@/models/QuizRoom'
 import Question from '@/models/Question'
-import User from '@/models/User'
-import Quiz from '@/models/Quiz'
 
-export const dynamic = 'force-dynamic'          // always server‑side
+export const dynamic = 'force-dynamic'          
 
 export async function POST(req: NextRequest) {
-    await connectDB()                             // open (or reuse) Mongo connection
-
+    await connectDB()                             
     try {
         const { participationId }: { participationId: string } = await req.json()
 

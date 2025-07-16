@@ -1,7 +1,7 @@
 // app/api/questions/get/[roomId]/route.ts
 import { NextRequest } from 'next/server';
 import { connectDB } from '@/lib/db';
-import mongoose, { Types } from 'mongoose';
+import { Types } from 'mongoose';
 
 import QuizRoom from '@/models/QuizRoom';
 import Question from '@/models/Question';
