@@ -1,96 +1,94 @@
-import { NextRequest } from 'next/server'
-import { connectDB } from '@/lib/db'
-import mongoose from 'mongoose'
+// src/app/api/leaderboard/[roomId]/route.ts
+import { connectDB } from '@/lib/db';
+import mongoose from 'mongoose';
 
-import QuizRoom from '@/models/QuizRoom'
-import Question from '@/models/Question'
-import Participation from '@/models/Participation'
-import ParticipantAnswer from '@/models/ParticipantAnswer'
+import QuizRoom from '@/models/QuizRoom';
+import Question from '@/models/Question';
+import Participation from '@/models/Participation';
+import ParticipantAnswer from '@/models/ParticipantAnswer';
 
-export const dynamic = 'force-dynamic'   // always server‑side
+export const dynamic = 'force-dynamic'; // always server‑side
 
 export async function GET(
-    _req: NextRequest,
+    _req: Request,
     { params }: { params: { roomId: string } },
 ) {
-    await connectDB()
+    await connectDB();
 
     try {
-        const { roomId } = params
+        const { roomId } = params;
 
         /* ────────── validation ────────── */
         if (!roomId) {
-            return new Response(
-                JSON.stringify({ error: 'Room ID is required' }),
-                { status: 400 },
-            )
+            return new Response(JSON.stringify({ error: 'Room ID is required' }), {
+                status: 400,
+            });
         }
         if (!mongoose.Types.ObjectId.isValid(roomId)) {
-            return new Response(
-                JSON.stringify({ error: 'Invalid Room ID format' }),
-                { status: 400 },
-            )
+            return new Response(JSON.stringify({ error: 'Invalid Room ID format' }), {
+                status: 400,
+            });
         }
 
         /* ────────── fetch room + quiz doc ────────── */
         const room = await QuizRoom.findById(roomId)
-            .populate({ path: 'quizId', model: 'Quiz' }) // hydrated quizDoc
-            .exec()
+            .populate({ path: 'quizId', model: 'Quiz' })
+            .exec();
 
         if (!room) {
-            return new Response(
-                JSON.stringify({ error: 'Room not found' }),
-                { status: 404 },
-            )
+            return new Response(JSON.stringify({ error: 'Room not found' }), {
+                status: 404,
+            });
         }
 
-        const quizDoc = room.quizId as any
+        const quizDoc = room.quizId as any;
 
-        /* ────────── fetch all questions for marks total ────────── */
+        /* ────────── fetch questions for total marks ────────── */
         const questions = await Question.find({ quizId: quizDoc._id })
             .select('marks')
-            .exec()
-        const totalPossibleMarks = questions.reduce((sum, q) => sum + q.marks, 0)
+            .exec();
+        const totalPossibleMarks = questions.reduce((sum, q) => sum + q.marks, 0);
 
-        /* ────────── completed participations ordered by score desc + finishedAt asc ────────── */
+        /* ────────── completed participations ────────── */
         const participations = await Participation.find({
             quizRoomId: roomId,
             completed: true,
         })
             .sort({ score: -1, finishedAt: 1 })
             .populate({ path: 'userId', select: 'username' })
-            .exec()
+            .exec();
 
-        const participationIds = participations.map(p => p._id)
+        const participationIds = participations.map(p => p._id);
 
-        /* ────────── fetch answers in one query & group by participation ────────── */
+        /* ────────── fetch answers & group by participation ────────── */
         const answers = await ParticipantAnswer.find({
             participationId: { $in: participationIds },
-        }).exec()
+        }).exec();
 
-        const answersByPart: Record<string, typeof answers> = {}
+        const answersByPart: Record<string, typeof answers> = {};
         answers.forEach(a => {
-            const k = (a.participationId as mongoose.Types.ObjectId).toString()
-            if (!answersByPart[k]) answersByPart[k] = []
-            answersByPart[k].push(a)
-        })
+            const k = (a.participationId as mongoose.Types.ObjectId).toString();
+            if (!answersByPart[k]) answersByPart[k] = [];
+            answersByPart[k].push(a);
+        });
 
-        /* ────────── build leaderboard array ────────── */
+        /* ────────── build leaderboard ────────── */
         const leaderboard = participations.map((p, idx) => {
-            const partIdStr = p._id.toString()
-            const partAnswers = answersByPart[partIdStr] || []
-            const correctCount = partAnswers.filter(a => a.isCorrect).length
-            const answeredCount = partAnswers.length
-            const totalQuestions = questions.length
+            const partAnswers = answersByPart[p._id.toString()] || [];
+            const correctCount = partAnswers.filter(a => a.isCorrect).length;
+            const answeredCount = partAnswers.length;
+            const totalQuestions = questions.length;
             const accuracy =
-                answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0
+                answeredCount > 0
+                    ? Math.round((correctCount / answeredCount) * 100)
+                    : 0;
 
             const completionTime =
                 p.finishedAt && p.joinedAt
                     ? Math.round(
                         (p.finishedAt.getTime() - p.joinedAt.getTime()) / (1000 * 60),
                     )
-                    : null
+                    : null;
 
             return {
                 rank: idx + 1,
@@ -106,8 +104,8 @@ export async function GET(
                 completionTime,
                 finishedAt: p.finishedAt,
                 joinedAt: p.joinedAt,
-            }
-        })
+            };
+        });
 
         /* ────────── quiz‑level statistics ────────── */
         const averageScore =
@@ -116,8 +114,8 @@ export async function GET(
                     participations.reduce((sum, p) => sum + p.score, 0) /
                     participations.length,
                 )
-                : 0
-        const highestScore = participations.length > 0 ? participations[0].score : 0
+                : 0;
+        const highestScore = participations.length > 0 ? participations[0].score : 0;
 
         /* ────────── respond ────────── */
         return new Response(
@@ -137,12 +135,12 @@ export async function GET(
                 leaderboard,
             }),
             { status: 200 },
-        )
+        );
     } catch (err) {
-        console.error('Error fetching leaderboard:', err)
+        console.error('Error fetching leaderboard:', err);
         return new Response(
             JSON.stringify({ error: 'Failed to fetch leaderboard' }),
             { status: 500 },
-        )
+        );
     }
 }
