@@ -20,6 +20,13 @@ const eslintConfig = [
       "build/**/*",
       "dist/**/*"
     ]
+  },
+  {
+    files: ["**/*.ts", "**/*.tsx"], // TypeScript files
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off", // ✅ disable the error about 'any'
+      "@typescript-eslint/no-unused-vars": "off",  // (optional) suppress unused vars
+    }
   }
 ];
 

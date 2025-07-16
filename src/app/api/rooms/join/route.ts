@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { connectDB } from '@/lib/db'          
 import QuizRoom from '@/models/QuizRoom'
-import Question from '@/models/Question'
+// import Question from '@/models/Question'
 import Participation from '@/models/Participation'
 
 export const dynamic = 'force-dynamic'        
@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
         }
 
         /* ───────────── Check that the underlying quiz has questions ────────── */
-        const quizId = room.quizId
-        const questionsCount = await Question.countDocuments({ quiz: quizId })
+        // const quizId = room.quizId
+        // const questionsCount = await Question.countDocuments({ quiz: quizId })
         // if (questionsCount === 0) {
         //     return new Response(
         //         JSON.stringify({
