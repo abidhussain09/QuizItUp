@@ -1,6 +1,11 @@
 // src/app/api/leaderboard/[roomId]/route.ts
 import { connectDB } from '@/lib/db';
-import mongoose from 'mongoose';
+import mongoose, { Types } from 'mongoose';
+
+import '@/models/QuizRoom';
+import '@/models/Question';
+import '@/models/Participation';
+import '@/models/ParticipantAnswer';
 
 import QuizRoom from '@/models/QuizRoom';
 import Question from '@/models/Question';
@@ -9,97 +14,110 @@ import ParticipantAnswer from '@/models/ParticipantAnswer';
 
 export const dynamic = 'force-dynamic'; // always server‑side
 
-export async function GET(
-    _req: Request,
-    { params }: { params: { roomId: string } },
-) {
+type ObjId = Types.ObjectId;
+
+/* ---------- GET /api/leaderboard/[roomId] ---------- */
+export async function GET(req: Request) {
     await connectDB();
 
     try {
-        const { roomId } = params;
+        /* ── extract roomId from the pathname ── */
+        const { pathname } = new URL(req.url);
+        // pathname ends with ".../leaderboard/<roomId>"
+        const roomId = pathname.split('/').pop()!;
 
-        /* ────────── validation ────────── */
-        if (!roomId) {
-            return new Response(JSON.stringify({ error: 'Room ID is required' }), {
-                status: 400,
-            });
-        }
-        if (!mongoose.Types.ObjectId.isValid(roomId)) {
-            return new Response(JSON.stringify({ error: 'Invalid Room ID format' }), {
-                status: 400,
-            });
-        }
+        /* ── validation ── */
+        if (!roomId)
+            return new Response(JSON.stringify({ error: 'Room ID is required' }), { status: 400 });
 
-        /* ────────── fetch room + quiz doc ────────── */
+        if (!mongoose.Types.ObjectId.isValid(roomId))
+            return new Response(JSON.stringify({ error: 'Invalid Room ID format' }), { status: 400 });
+
+        /* ── fetch room & its quiz ── */
         const room = await QuizRoom.findById(roomId)
-            .populate({ path: 'quizId', model: 'Quiz' })
-            .exec();
+            .populate<{ quizId: { _id: Types.ObjectId; title: string; description: string; duration: number } }>({
+                path: 'quizId',
+                model: 'Quiz',
+            })
+            .lean<{
+                _id: Types.ObjectId;
+                inviteCode: string;
+                quizId: {
+                    _id: Types.ObjectId;
+                    title: string;
+                    description: string;
+                    duration: number;
+                };
+            }>();
 
-        if (!room) {
-            return new Response(JSON.stringify({ error: 'Room not found' }), {
-                status: 404,
-            });
-        }
 
-        const quizDoc = room.quizId as any;
+        if (!room)
+            return new Response(JSON.stringify({ error: 'Room not found' }), { status: 404 });
 
-        /* ────────── fetch questions for total marks ────────── */
+        const quizDoc = room.quizId as {
+            _id: ObjId;
+            title: string;
+            description: string;
+            duration: number;
+        };
+
+        /* ── total marks & question count ── */
         const questions = await Question.find({ quizId: quizDoc._id })
             .select('marks')
-            .exec();
+            .lean<{ marks: number }[]>();
+
         const totalPossibleMarks = questions.reduce((sum, q) => sum + q.marks, 0);
 
-        /* ────────── completed participations ────────── */
+        /* ── completed participations ── */
         const participations = await Participation.find({
             quizRoomId: roomId,
             completed: true,
         })
             .sort({ score: -1, finishedAt: 1 })
             .populate({ path: 'userId', select: 'username' })
-            .exec();
+            .lean<{
+                _id: ObjId;
+                userId: { _id: ObjId; username: string };
+                joinedAt: Date;
+                finishedAt: Date | null;
+                score: number;
+            }[]>();
 
-        const participationIds = participations.map(p => p._id);
-
-        /* ────────── fetch answers & group by participation ────────── */
+        /* ── answers for accuracy ── */
+        const partIds = participations.map(p => p._id);
         const answers = await ParticipantAnswer.find({
-            participationId: { $in: participationIds },
-        }).exec();
+            participationId: { $in: partIds },
+        }).lean<{ participationId: ObjId; isCorrect: boolean }[]>();
 
-        const answersByPart: Record<string, typeof answers> = {};
+        const answersByPart = new Map<string, typeof answers>();
         answers.forEach(a => {
-            const k = (a.participationId as mongoose.Types.ObjectId).toString();
-            if (!answersByPart[k]) answersByPart[k] = [];
-            answersByPart[k].push(a);
+            const key = a.participationId.toString();
+            if (!answersByPart.has(key)) answersByPart.set(key, []);
+            answersByPart.get(key)!.push(a);
         });
 
-        /* ────────── build leaderboard ────────── */
+        /* ── build leaderboard ── */
         const leaderboard = participations.map((p, idx) => {
-            const partAnswers = answersByPart[p._id.toString()] || [];
-            const correctCount = partAnswers.filter(a => a.isCorrect).length;
-            const answeredCount = partAnswers.length;
-            const totalQuestions = questions.length;
-            const accuracy =
-                answeredCount > 0
-                    ? Math.round((correctCount / answeredCount) * 100)
-                    : 0;
+            const a = answersByPart.get(p._id.toString()) ?? [];
+            const correct = a.filter(ans => ans.isCorrect).length;
+            const answered = a.length;
+            const accuracy = answered ? Math.round((correct / answered) * 100) : 0;
 
             const completionTime =
                 p.finishedAt && p.joinedAt
-                    ? Math.round(
-                        (p.finishedAt.getTime() - p.joinedAt.getTime()) / (1000 * 60),
-                    )
+                    ? Math.round((p.finishedAt.getTime() - p.joinedAt.getTime()) / 60000)
                     : null;
 
             return {
                 rank: idx + 1,
                 participant: {
-                    id: (p.userId as any)._id.toString(),
-                    username: (p.userId as any).username,
+                    id: p.userId._id.toString(),
+                    username: p.userId.username,
                 },
                 score: p.score,
-                correctAnswers: correctCount,
-                totalQuestions,
-                answeredQuestions: answeredCount,
+                correctAnswers: correct,
+                totalQuestions: questions.length,
+                answeredQuestions: answered,
                 accuracy,
                 completionTime,
                 finishedAt: p.finishedAt,
@@ -107,17 +125,14 @@ export async function GET(
             };
         });
 
-        /* ────────── quiz‑level statistics ────────── */
+        /* ── quiz‑level stats ── */
         const averageScore =
             participations.length > 0
-                ? Math.round(
-                    participations.reduce((sum, p) => sum + p.score, 0) /
-                    participations.length,
-                )
+                ? Math.round(participations.reduce((s, p) => s + p.score, 0) / participations.length)
                 : 0;
         const highestScore = participations.length > 0 ? participations[0].score : 0;
 
-        /* ────────── respond ────────── */
+        /* ── response ── */
         return new Response(
             JSON.stringify({
                 quiz: {
@@ -138,9 +153,8 @@ export async function GET(
         );
     } catch (err) {
         console.error('Error fetching leaderboard:', err);
-        return new Response(
-            JSON.stringify({ error: 'Failed to fetch leaderboard' }),
-            { status: 500 },
-        );
+        return new Response(JSON.stringify({ error: 'Failed to fetch leaderboard' }), {
+            status: 500,
+        });
     }
 }
