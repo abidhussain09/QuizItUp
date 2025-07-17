@@ -88,7 +88,7 @@ export default function CreateQuiz({ userId }: CreateQuizProps) {
         const { name, value } = e.target;
         setQuizData(prev => ({
             ...prev,
-            [name]: value
+            [name]:  name === 'duration' ? parseInt(value) || 0 : value
         }));
     };
 
